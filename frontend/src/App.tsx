@@ -150,6 +150,28 @@ function App() {
           ))}
         </nav>
 
+        <div className="sidebar-metrics">
+          <div className="strategy-indicator">
+            <div className="strategy-label">
+              <span>Strategy bar</span>
+              <strong>—</strong>
+            </div>
+            <div
+              className="strategy-track"
+              role="progressbar"
+              aria-label="Průběh strategie"
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <span />
+            </div>
+          </div>
+          <div className="price-indicator" aria-label="Aktuální cena BTC v USD">
+            <span>BTC / USD</span>
+            <strong>$ —</strong>
+          </div>
+        </div>
+
         <div className="sidebar-footer">
           <button className="nav-item settings-item" type="button">
             <Settings size={18} strokeWidth={1.8} />
@@ -182,27 +204,6 @@ function App() {
               <Menu size={19} />
             </button>
             <h1>Dashboard</h1>
-          </div>
-          <div className="header-indicators">
-            <div className="price-indicator" aria-label="Aktuální cena BTC v USD">
-              <span>BTC / USD</span>
-              <strong>$ —</strong>
-            </div>
-            <div className="strategy-indicator">
-              <div className="strategy-label">
-                <span>Strategy bar</span>
-                <strong>—</strong>
-              </div>
-              <div
-                className="strategy-track"
-                role="progressbar"
-                aria-label="Průběh strategie"
-                aria-valuemin={0}
-                aria-valuemax={100}
-              >
-                <span />
-              </div>
-            </div>
           </div>
         </header>
         <main className="workspace" aria-label="Pracovní plocha" />
