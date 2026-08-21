@@ -138,6 +138,7 @@ public sealed class IdentityApiTests(IdentityApiFixture fixture)
         var current = await client.GetFromJsonAsync<JsonElement>("/api/identity/me");
         Assert.Equal("private-owner", current.GetProperty("userName").GetString());
         Assert.False(current.GetProperty("isDefault").GetBoolean());
+        Assert.True(current.GetProperty("sessionExpiresAt").GetDateTimeOffset() > DateTimeOffset.UtcNow);
     }
 
     private static async Task<string> GetAntiforgeryToken(HttpClient client)

@@ -12,6 +12,7 @@ SQLite ani souborova databaze nejsou soucasti nove architektury.
 - `scripts/import-sqlite.js` - transakcni import stare databaze
 - `docs/database-model.md` - rozhodnuti, entity a pravidla modelu
 - `docs/identity.md` - defaultni identita, relace a opravneni
+- `docs/market-data.md` - zdroj, cache a refresh trznich cen
 - `backend/` - ASP.NET Core API a integracni testy
 - `frontend/` - React/Vite klient
 - `compose.yaml` - lokalni PostgreSQL pro vyvoj

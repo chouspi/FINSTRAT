@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Finstrat.Api.Infrastructure.Persistence;
 using Finstrat.Api.Modules.Identity.Domain;
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,6 +21,7 @@ public static class IdentityEndpoints
         }).AllowAnonymous();
 
         group.MapGet("/me", async (
+            HttpContext context,
             ClaimsPrincipal principal,
             UserManager<ApplicationUser> userManager,
             CancellationToken cancellationToken) =>
@@ -29,7 +31,15 @@ public static class IdentityEndpoints
                 ? null
                 : await userManager.Users.AsNoTracking()
                     .SingleOrDefaultAsync(item => item.Id == Guid.Parse(userId), cancellationToken);
-            return user is null ? Results.Unauthorized() : Results.Ok(ToResponse(user, principal));
+            if (user is null) return Results.Unauthorized();
+
+            DateTimeOffset? sessionExpiresAt = null;
+            if (!user.IsDefault)
+            {
+                var authentication = await context.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+                sessionExpiresAt = authentication.Properties?.ExpiresUtc;
+            }
+            return Results.Ok(ToResponse(user, principal, sessionExpiresAt));
         }).RequireAuthorization();
 
         group.MapPost("/login", async (
@@ -127,14 +137,18 @@ public static class IdentityEndpoints
         Guid.Parse(principal.FindFirstValue(IdentityClaims.HouseholdId)
             ?? throw new InvalidOperationException("Authenticated user has no household."));
 
-    private static CurrentUserResponse ToResponse(ApplicationUser user, ClaimsPrincipal principal) => new(
+    private static CurrentUserResponse ToResponse(
+        ApplicationUser user,
+        ClaimsPrincipal principal,
+        DateTimeOffset? sessionExpiresAt) => new(
         user.Id,
         user.UserName!,
         user.DisplayName,
         user.Email,
         user.IsDefault,
         principal.FindFirstValue(IdentityClaims.HouseholdId),
-        principal.FindFirstValue(IdentityClaims.HouseholdRole));
+        principal.FindFirstValue(IdentityClaims.HouseholdRole),
+        sessionExpiresAt);
 }
 
 public sealed record LoginRequest(string Identifier, string Password);
@@ -147,4 +161,5 @@ public sealed record CurrentUserResponse(
     string? Email,
     bool IsDefault,
     string? HouseholdId,
-    string? Role);
+    string? Role,
+    DateTimeOffset? SessionExpiresAt);

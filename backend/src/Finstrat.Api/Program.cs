@@ -1,6 +1,7 @@
 using Finstrat.Api.Infrastructure.Persistence;
 using Finstrat.Api.Modules.Identity;
 using Finstrat.Api.Modules.Identity.Domain;
+using Finstrat.Api.Modules.MarketData;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -58,6 +59,13 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
     options.HeaderName = "X-CSRF-TOKEN";
 });
+builder.Services.AddHttpClient("btc-price", client =>
+{
+    client.BaseAddress = new Uri("https://api.coinbase.com/");
+    client.Timeout = TimeSpan.FromSeconds(4);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("FINSTRAT/2.0");
+});
+builder.Services.AddSingleton<BtcPriceService>();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -70,6 +78,7 @@ app.UseAuthorization();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
 app.MapIdentityEndpoints();
+app.MapMarketDataEndpoints();
 
 app.Run();
 
