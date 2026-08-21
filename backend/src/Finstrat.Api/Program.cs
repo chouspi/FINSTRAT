@@ -1,4 +1,5 @@
 using Finstrat.Api.Infrastructure.Persistence;
+using Finstrat.Api.Modules.Bitcoin;
 using Finstrat.Api.Modules.Identity;
 using Finstrat.Api.Modules.Identity.Domain;
 using Finstrat.Api.Modules.MarketData;
@@ -66,6 +67,7 @@ builder.Services.AddHttpClient("btc-price", client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("FINSTRAT/2.0");
 });
 builder.Services.AddSingleton<BtcPriceService>();
+builder.Services.AddScoped<BitcoinQueryService>();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -79,6 +81,7 @@ app.UseAuthorization();
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
 app.MapIdentityEndpoints();
 app.MapMarketDataEndpoints();
+app.MapBitcoinEndpoints();
 
 app.Run();
 

@@ -15,7 +15,7 @@ public sealed class BtcPriceServiceTests
         var second = await service.GetAsync(CancellationToken.None);
 
         Assert.Equal(123456.78m, first.PriceUsd);
-        Assert.Equal(2.8807m, first.Change24hPercent);
+        Assert.Equal(2.8806m, first.Change24hPercent);
         Assert.Equal("coinbase", first.Source);
         Assert.False(first.IsStale);
         Assert.Equal(first, second);

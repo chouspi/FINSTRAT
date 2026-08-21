@@ -12,6 +12,7 @@ namespace Finstrat.Api.Tests;
 public sealed class IdentityApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
+    public string ConnectionString => _postgres.GetConnectionString();
 
     public async Task InitializeAsync()
     {
