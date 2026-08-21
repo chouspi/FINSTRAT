@@ -145,24 +145,25 @@
 }
 
 .settings-item {
-  margin-bottom: 10px;
+  margin-bottom: 0;
 }
 
 .signed-in-user {
   display: grid;
-  grid-template-columns: 34px 1fr 30px;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
   align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 12px;
-  border: 1px solid rgba(203, 141, 77, 0.2);
-  border-radius: 5px;
-  background: rgba(203, 141, 77, 0.06);
+  gap: 8px;
+  width: fit-content;
+  max-width: 240px;
+  padding: 4px 6px;
+  border: 1px solid rgba(20, 32, 31, 0.1);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.42);
 }
 
 .user-avatar {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -180,16 +181,16 @@
 
 .signed-in-user strong {
   overflow: hidden;
-  color: #f4f6f5;
-  font-size: 12px;
+  color: #253330;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .signed-in-user span {
-  margin-top: 3px;
-  color: #7f8f8a;
-  font-size: 9px;
+  margin-top: 1px;
+  color: #7b8884;
+  font-size: 8px;
 }
 
 .signed-in-user button,
@@ -203,9 +204,9 @@
 }
 
 .signed-in-user button {
-  width: 30px;
-  height: 30px;
-  color: #82918d;
+  width: 28px;
+  height: 28px;
+  color: #71807c;
 }
 
 .content-shell {
@@ -218,28 +219,31 @@
 .top-header {
   height: 52px;
   flex: 0 0 52px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
   padding: 0 24px;
   border-bottom: 1px solid rgba(20, 32, 31, 0.13);
   background: rgba(247, 245, 238, 0.92);
   backdrop-filter: blur(10px);
 }
 
-.header-title {
+.header-leading {
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  overflow: hidden;
 }
 
-.header-title h1 {
+.header-title {
   margin: 0;
   color: #1b2927;
   font-size: 16px;
   font-weight: 750;
   letter-spacing: -0.01em;
+  text-align: center;
 }
 
 .price-indicator {
@@ -498,7 +502,34 @@
   .top-header {
     height: 58px;
     flex-basis: 58px;
+    gap: 6px;
     padding: 0 16px;
+  }
+
+  .header-leading {
+    gap: 6px;
+  }
+
+  .header-leading .signed-in-user {
+    min-width: 0;
+    max-width: 105px;
+    grid-template-columns: minmax(0, 1fr) 24px;
+    gap: 3px;
+    padding: 3px 4px 3px 7px;
+  }
+
+  .header-leading .user-avatar,
+  .header-leading .signed-in-user span {
+    display: none;
+  }
+
+  .header-leading .signed-in-user button {
+    width: 24px;
+    height: 24px;
+  }
+
+  .header-title {
+    font-size: 14px;
   }
 
   .workspace {

@@ -66,19 +66,28 @@ describe('hidden login', () => {
 
   it('remembers the username only after a successful login', async () => {
     const fetchMock = vi.mocked(fetch)
+    let loggedIn = false
     fetchMock.mockImplementation(async (input) => {
       const url = String(input)
       if (url.endsWith('/antiforgery')) {
         return { ok: true, status: 200, json: async () => ({ token: 'test-token' }) } as Response
       }
-      if (url.endsWith('/login')) return { ok: true, status: 204 } as Response
+      if (url.endsWith('/login')) {
+        loggedIn = true
+        return { ok: true, status: 204 } as Response
+      }
       return {
         ok: true,
         status: 200,
-        json: async () => ({
-          id: 'default', userName: 'default', displayName: 'Default User', email: null,
-          isDefault: true, householdId: 'household', role: 'owner',
-        }),
+        json: async () => loggedIn
+          ? {
+              id: 'samuel', userName: 'samuel', displayName: 'Samuel', email: null,
+              isDefault: false, householdId: 'household', role: 'owner',
+            }
+          : {
+              id: 'default', userName: 'default', displayName: 'Default User', email: null,
+              isDefault: true, householdId: 'household', role: 'owner',
+            },
       } as Response
     })
     const user = userEvent.setup()
@@ -92,5 +101,7 @@ describe('hidden login', () => {
     await user.click(screen.getByRole('button', { name: 'Otevřít relaci' }))
 
     await waitFor(() => expect(localStorage.getItem('finstrat:last-username')).toBe('samuel'))
+    await waitFor(() => expect(within(screen.getByRole('banner')).getByText('Samuel')).toBeInTheDocument())
+    expect(within(screen.getByRole('complementary')).queryByText('Samuel')).not.toBeInTheDocument()
   })
 })

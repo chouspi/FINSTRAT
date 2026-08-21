@@ -177,24 +177,12 @@ function App() {
             <Settings size={18} strokeWidth={1.8} />
             <span>Nastavení</span>
           </button>
-          {signedInUser && (
-            <div className="signed-in-user">
-              <div className="user-avatar">{signedInUser.displayName.slice(0, 2).toUpperCase()}</div>
-              <div>
-                <strong>{signedInUser.displayName}</strong>
-                <span>Relace končí za 15 minut</span>
-              </div>
-              <button type="button" aria-label="Odhlásit" onClick={() => logout.mutate()}>
-                <LogOut size={17} />
-              </button>
-            </div>
-          )}
         </div>
       </aside>
 
       <div className="content-shell">
         <header className="top-header">
-          <div className="header-title">
+          <div className="header-leading">
             <button
               className="mobile-menu"
               type="button"
@@ -203,8 +191,21 @@ function App() {
             >
               <Menu size={19} />
             </button>
-            <h1>Dashboard</h1>
+            {signedInUser && (
+              <div className="signed-in-user">
+                <div className="user-avatar">{signedInUser.displayName.slice(0, 2).toUpperCase()}</div>
+                <div>
+                  <strong>{signedInUser.displayName}</strong>
+                  <span>Relace končí za 15 minut</span>
+                </div>
+                <button type="button" aria-label="Odhlásit" onClick={() => logout.mutate()}>
+                  <LogOut size={17} />
+                </button>
+              </div>
+            )}
           </div>
+          <h1 className="header-title">Dashboard</h1>
+          <div aria-hidden="true" />
         </header>
         <main className="workspace" aria-label="Pracovní plocha" />
       </div>
