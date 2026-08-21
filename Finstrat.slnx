@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/backend/" />
+  <Folder Name="/backend/src/">
+    <Project Path="backend/src/Finstrat.Api/Finstrat.Api.csproj" />
+  </Folder>
+  <Folder Name="/backend/tests/">
+    <Project Path="backend/tests/Finstrat.Api.Tests/Finstrat.Api.Tests.csproj" />
+  </Folder>
+</Solution>
