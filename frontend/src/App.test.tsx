@@ -1,14 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { RouterProvider } from '@tanstack/react-router'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import App from './App'
+import { createTestRouter } from './router'
 
-function renderApp() {
+async function renderApp(path = '/') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const router = createTestRouter(path)
+  await router.load()
   return render(
     <QueryClientProvider client={queryClient}>
-      <App />
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   )
 }
@@ -26,7 +29,7 @@ describe('hidden login', () => {
 
   it('keeps login hidden until the third BTC logo click', async () => {
     const user = userEvent.setup()
-    renderApp()
+    await renderApp()
     const logo = screen.getByRole('button', { name: 'FINSTRAT domů' })
 
     await user.click(logo)
@@ -37,8 +40,8 @@ describe('hidden login', () => {
     expect(screen.getByRole('dialog', { name: 'Přihlášení' })).toBeInTheDocument()
   })
 
-  it('does not expose account switching in default mode', () => {
-    renderApp()
+  it('does not expose account switching in default mode', async () => {
+    await renderApp()
     expect(screen.queryByText(/přihl/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Odhlásit' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
@@ -52,7 +55,7 @@ describe('hidden login', () => {
   it('prefills the remembered username and clears it on first focus', async () => {
     localStorage.setItem('finstrat:last-username', 'samuel')
     const user = userEvent.setup()
-    renderApp()
+    await renderApp()
     const logo = screen.getByRole('button', { name: 'FINSTRAT domů' })
     await user.click(logo)
     await user.click(logo)
@@ -91,7 +94,7 @@ describe('hidden login', () => {
       } as Response
     })
 
-    renderApp()
+    await renderApp()
     expect(await screen.findByText('$123,457')).toBeInTheDocument()
     expect(screen.getByText('+2.35%')).toHaveClass('change-positive')
   })
@@ -124,7 +127,7 @@ describe('hidden login', () => {
       } as Response
     })
     const user = userEvent.setup()
-    renderApp()
+    await renderApp()
     const logo = screen.getByRole('button', { name: 'FINSTRAT domů' })
     await user.click(logo)
     await user.click(logo)

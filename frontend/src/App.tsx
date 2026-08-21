@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import {
   Bitcoin,
   BookOpenCheck,
@@ -18,6 +19,7 @@ import {
   X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { antiforgeryToken, apiRequest } from './lib/api'
 import './App.css'
 
 type CurrentUser = {
@@ -42,14 +44,14 @@ type BtcPrice = {
 type NavItem = {
   label: string
   icon: LucideIcon
-  active?: boolean
+  href?: '/' | '/bitcoin'
 }
 
 const navigation: { label: string; items: NavItem[] }[] = [
   {
     label: 'Přehled',
     items: [
-      { label: 'Dashboard', icon: CircleGauge, active: true },
+      { label: 'Dashboard', icon: CircleGauge, href: '/' },
       { label: 'Portfolio', icon: ChartNoAxesCombined },
       { label: 'Strategie', icon: TrendingUp },
     ],
@@ -57,7 +59,7 @@ const navigation: { label: string; items: NavItem[] }[] = [
   {
     label: 'Majetek',
     items: [
-      { label: 'Bitcoin', icon: Bitcoin },
+      { label: 'Bitcoin', icon: Bitcoin, href: '/bitcoin' },
       { label: 'VWCE', icon: Landmark },
       { label: 'Dluhy', icon: WalletCards },
       { label: 'Výdaje', icon: ReceiptText },
@@ -83,42 +85,34 @@ const percentFormatter = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 })
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, { credentials: 'same-origin', ...options })
-  if (!response.ok) throw new Error(response.status === 401 ? 'Neplatné přihlašovací údaje.' : 'Požadavek se nezdařil.')
-  if (response.status === 204) return undefined as T
-  return response.json() as Promise<T>
-}
-
-async function antiforgeryToken() {
-  const response = await request<{ token: string }>('/api/identity/antiforgery')
-  return response.token
-}
-
 function App() {
   const queryClient = useQueryClient()
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [loginOpen, setLoginOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const logoClicks = useRef<number[]>([])
   const currentUser = useQuery({
     queryKey: ['identity', 'me'],
-    queryFn: () => request<CurrentUser>('/api/identity/me'),
+    queryFn: () => apiRequest<CurrentUser>('/api/identity/me'),
     retry: false,
   })
   const btcPrice = useQuery({
     queryKey: ['market-data', 'btc-price'],
-    queryFn: () => request<BtcPrice>('/api/market-data/btc-price'),
+    queryFn: () => apiRequest<BtcPrice>('/api/market-data/btc-price'),
     retry: false,
   })
   const logout = useMutation({
     mutationFn: async () => {
       const token = await antiforgeryToken()
-      await request<void>('/api/identity/logout', {
+      await apiRequest<void>('/api/identity/logout', {
         method: 'POST',
         headers: { 'X-CSRF-TOKEN': token },
       })
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['identity', 'me'] }),
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: ['bitcoin'] })
+      await queryClient.invalidateQueries({ queryKey: ['identity', 'me'] })
+    },
   })
 
   function handleLogoClick() {
@@ -168,16 +162,34 @@ function App() {
               <p>{section.label}</p>
               {section.items.map((item) => {
                 const Icon = item.icon
-                return (
-                  <button
-                    className={`nav-item${item.active ? ' nav-item--active' : ''}`}
-                    type="button"
-                    key={item.label}
-                    aria-current={item.active ? 'page' : undefined}
-                  >
+                const isActive = item.href === pathname
+                const content = (
+                  <>
                     <Icon size={18} strokeWidth={1.8} />
                     <span>{item.label}</span>
-                    {item.active && <ChevronRight className="nav-arrow" size={15} />}
+                    {isActive && <ChevronRight className="nav-arrow" size={15} />}
+                  </>
+                )
+                if (item.href) {
+                  return (
+                    <Link
+                      className={`nav-item${isActive ? ' nav-item--active' : ''}`}
+                      to={item.href}
+                      key={item.label}
+                      aria-current={isActive ? 'page' : undefined}
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      {content}
+                    </Link>
+                  )
+                }
+                return (
+                  <button
+                    className="nav-item"
+                    type="button"
+                    key={item.label}
+                  >
+                    {content}
                   </button>
                 )
               })}
@@ -248,16 +260,17 @@ function App() {
               </div>
             )}
           </div>
-          <h1 className="header-title">Dashboard</h1>
+          <h1 className="header-title">{pathname === '/bitcoin' ? 'Bitcoin' : 'Dashboard'}</h1>
           <div aria-hidden="true" />
         </header>
-        <main className="workspace" aria-label="Pracovní plocha" />
+        <main className="workspace" aria-label="Pracovní plocha"><Outlet /></main>
       </div>
 
       {loginOpen && (
         <LoginDialog
           onClose={() => setLoginOpen(false)}
           onSuccess={async () => {
+            queryClient.removeQueries({ queryKey: ['bitcoin'] })
             await queryClient.invalidateQueries({ queryKey: ['identity', 'me'] })
             setLoginOpen(false)
           }}
@@ -293,7 +306,7 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
   const login = useMutation({
     mutationFn: async () => {
       const token = await antiforgeryToken()
-      await request<void>('/api/identity/login', {
+      await apiRequest<void>('/api/identity/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
         body: JSON.stringify({ identifier, password }),

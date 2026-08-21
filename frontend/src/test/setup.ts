@@ -12,3 +12,8 @@ Object.defineProperty(globalThis, 'localStorage', {
     setItem: (key: string, value: string) => values.set(key, String(value)),
   } satisfies Storage,
 })
+
+Object.defineProperty(window, 'scrollTo', {
+  configurable: true,
+  value: () => {},
+})

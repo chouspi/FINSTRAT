@@ -63,7 +63,7 @@ public sealed class BitcoinQueryService(ApplicationDbContext dbContext)
               a.description,
               owner.display_name,
               COALESCE(lots.quantity_btc, 0) - COALESCE(disposals.quantity_btc, 0) AS quantity_btc,
-              COALESCE(basis.cost_basis_czk, 0) AS cost_basis_czk,
+              COALESCE(basis.cost_basis_czk, 0)::numeric(20,2) AS cost_basis_czk,
               COALESCE(basis.complete, true) AS cost_basis_complete,
               COALESCE(lots.lot_count, 0) AS lot_count,
               COALESCE(disposals.disposal_count, 0) AS disposal_count,
