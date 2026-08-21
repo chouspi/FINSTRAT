@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Bitcoin,
@@ -28,6 +28,14 @@ type CurrentUser = {
   isDefault: boolean
   householdId: string
   role: string
+  sessionExpiresAt: string | null
+}
+
+type BtcPrice = {
+  priceUsd: number
+  observedAt: string
+  source: string
+  isStale: boolean
 }
 
 type NavItem = {
@@ -63,6 +71,12 @@ const navigation: { label: string; items: NavItem[] }[] = [
   },
 ]
 
+const usdFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+})
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, { credentials: 'same-origin', ...options })
   if (!response.ok) throw new Error(response.status === 401 ? 'Neplatné přihlašovací údaje.' : 'Požadavek se nezdařil.')
@@ -83,6 +97,11 @@ function App() {
   const currentUser = useQuery({
     queryKey: ['identity', 'me'],
     queryFn: () => request<CurrentUser>('/api/identity/me'),
+    retry: false,
+  })
+  const btcPrice = useQuery({
+    queryKey: ['market-data', 'btc-price'],
+    queryFn: () => request<BtcPrice>('/api/market-data/btc-price'),
     retry: false,
   })
   const logout = useMutation({
@@ -106,6 +125,10 @@ function App() {
   }
 
   const signedInUser = currentUser.data?.isDefault === false ? currentUser.data : null
+  const priceUsd = btcPrice.data?.priceUsd
+  const displayedBtcPrice = typeof priceUsd === 'number' && Number.isFinite(priceUsd)
+    ? usdFormatter.format(priceUsd)
+    : '$ —'
 
   return (
     <div className="app-shell">
@@ -168,7 +191,9 @@ function App() {
           </div>
           <div className="price-indicator" aria-label="Aktuální cena BTC v USD">
             <span>BTC / USD</span>
-            <strong>$ —</strong>
+            <strong className={btcPrice.data?.isStale ? 'price-stale' : undefined}>
+              {displayedBtcPrice}
+            </strong>
           </div>
         </div>
 
@@ -196,7 +221,7 @@ function App() {
                 <div className="user-avatar">{signedInUser.displayName.slice(0, 2).toUpperCase()}</div>
                 <div>
                   <strong>{signedInUser.displayName}</strong>
-                  <span>Relace končí za 15 minut</span>
+                  <SessionRemaining expiresAt={signedInUser.sessionExpiresAt} />
                 </div>
                 <button type="button" aria-label="Odhlásit" onClick={() => logout.mutate()}>
                   <LogOut size={17} />
@@ -221,6 +246,24 @@ function App() {
       )}
     </div>
   )
+}
+
+function SessionRemaining({ expiresAt }: { expiresAt: string | null }) {
+  const [minutes, setMinutes] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!expiresAt) return
+    const update = () => setMinutes(Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 60_000)))
+    const initialUpdate = window.setTimeout(update, 0)
+    const interval = window.setInterval(update, 30_000)
+    return () => {
+      window.clearTimeout(initialUpdate)
+      window.clearInterval(interval)
+    }
+  }, [expiresAt])
+
+  if (!expiresAt || minutes === null) return <span>Soukromá relace</span>
+  return <span>{minutes > 0 ? `Končí za ${minutes} min` : 'Relace končí'}</span>
 }
 
 function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => Promise<void> }) {

@@ -64,6 +64,31 @@ describe('hidden login', () => {
     expect(username).toHaveValue('')
   })
 
+  it('renders the current BTC/USD price in the sidebar', async () => {
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith('/btc-price')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ priceUsd: 123456.78, observedAt: new Date().toISOString(), source: 'coinbase', isStale: false }),
+        } as Response
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 'default', userName: 'default', displayName: 'Default User', email: null,
+          isDefault: true, householdId: 'household', role: 'owner', sessionExpiresAt: null,
+        }),
+      } as Response
+    })
+
+    renderApp()
+    expect(await screen.findByText('$123,457')).toBeInTheDocument()
+  })
+
   it('remembers the username only after a successful login', async () => {
     const fetchMock = vi.mocked(fetch)
     let loggedIn = false
@@ -83,6 +108,7 @@ describe('hidden login', () => {
           ? {
               id: 'samuel', userName: 'samuel', displayName: 'Samuel', email: null,
               isDefault: false, householdId: 'household', role: 'owner',
+              sessionExpiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
             }
           : {
               id: 'default', userName: 'default', displayName: 'Default User', email: null,
@@ -102,6 +128,7 @@ describe('hidden login', () => {
 
     await waitFor(() => expect(localStorage.getItem('finstrat:last-username')).toBe('samuel'))
     await waitFor(() => expect(within(screen.getByRole('banner')).getByText('Samuel')).toBeInTheDocument())
+    expect(within(screen.getByRole('banner')).getByText(/Končí za \d+ min/)).toBeInTheDocument()
     expect(within(screen.getByRole('complementary')).queryByText('Samuel')).not.toBeInTheDocument()
   })
 })
