@@ -16,5 +16,30 @@ services:
       timeout: 5s
       retries: 10
 
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Database: Host=postgres;Port=5432;Database=${POSTGRES_DB:-finstrat};Username=${POSTGRES_USER:-finstrat};Password=${POSTGRES_PASSWORD}
+    volumes:
+      - data_protection_keys:/home/app/.aspnet/DataProtection-Keys
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-9200}:8080"
+    depends_on:
+      - api
+
 volumes:
   postgres_data:
+  data_protection_keys:

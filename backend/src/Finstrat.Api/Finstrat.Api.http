@@ -1,6 +1,0 @@
-@Finstrat.Api_HostAddress = http://localhost:5055
-
-GET {{Finstrat.Api_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
