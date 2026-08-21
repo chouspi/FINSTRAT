@@ -21,17 +21,22 @@ public sealed class BtcPriceService(IHttpClientFactory httpClientFactory)
             try
             {
                 using var response = await httpClientFactory.CreateClient("btc-price")
-                    .GetAsync("v2/prices/BTC-USD/spot", cancellationToken);
+                    .GetAsync("products/BTC-USD/stats", cancellationToken);
                 response.EnsureSuccessStatusCode();
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
                 using var payload = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-                var amount = payload.RootElement.GetProperty("data").GetProperty("amount").GetString();
-                if (!decimal.TryParse(amount, NumberStyles.Number, CultureInfo.InvariantCulture, out var price) || price <= 0)
+                var lastValue = payload.RootElement.GetProperty("last").GetString();
+                var openValue = payload.RootElement.GetProperty("open").GetString();
+                if (!decimal.TryParse(lastValue, NumberStyles.Number, CultureInfo.InvariantCulture, out var price)
+                    || !decimal.TryParse(openValue, NumberStyles.Number, CultureInfo.InvariantCulture, out var open)
+                    || price <= 0
+                    || open <= 0)
                 {
                     throw new InvalidOperationException("Price provider returned an invalid BTC price.");
                 }
 
-                _lastKnown = new BtcPrice(price, DateTimeOffset.UtcNow, "coinbase", false);
+                var change24hPercent = decimal.Round((price - open) / open * 100, 4);
+                _lastKnown = new BtcPrice(price, change24hPercent, DateTimeOffset.UtcNow, "coinbase", false);
                 return _lastKnown;
             }
             catch (Exception exception) when (
@@ -52,4 +57,9 @@ public sealed class BtcPriceService(IHttpClientFactory httpClientFactory)
         price is not null && DateTimeOffset.UtcNow - price.ObservedAt < MinimumRefreshInterval;
 }
 
-public sealed record BtcPrice(decimal PriceUsd, DateTimeOffset ObservedAt, string Source, bool IsStale);
+public sealed record BtcPrice(
+    decimal PriceUsd,
+    decimal Change24hPercent,
+    DateTimeOffset ObservedAt,
+    string Source,
+    bool IsStale);

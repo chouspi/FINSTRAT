@@ -33,6 +33,7 @@ type CurrentUser = {
 
 type BtcPrice = {
   priceUsd: number
+  change24hPercent: number
   observedAt: string
   source: string
   isStale: boolean
@@ -75,6 +76,11 @@ const usdFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
   maximumFractionDigits: 0,
+})
+const percentFormatter = new Intl.NumberFormat('en-US', {
+  signDisplay: 'always',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 })
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -129,6 +135,13 @@ function App() {
   const displayedBtcPrice = typeof priceUsd === 'number' && Number.isFinite(priceUsd)
     ? usdFormatter.format(priceUsd)
     : '$ —'
+  const change24h = btcPrice.data?.change24hPercent
+  const displayedChange24h = typeof change24h === 'number' && Number.isFinite(change24h)
+    ? `${percentFormatter.format(change24h)}%`
+    : null
+  const change24hClass = typeof change24h !== 'number' || change24h === 0
+    ? 'change-neutral'
+    : change24h > 0 ? 'change-positive' : 'change-negative'
 
   return (
     <div className="app-shell">
@@ -137,7 +150,6 @@ function App() {
       )}
 
       <aside className={`sidebar${sidebarOpen ? ' sidebar--open' : ''}`}>
-        <div className="sidebar-topline" />
         <div className="brand-row">
           <button className="brand-mark" type="button" aria-label="FINSTRAT domů" onClick={handleLogoClick}>
             <Bitcoin size={19} strokeWidth={2.2} />
@@ -191,9 +203,16 @@ function App() {
           </div>
           <div className="price-indicator" aria-label="Aktuální cena BTC v USD">
             <span>BTC / USD</span>
-            <strong className={btcPrice.data?.isStale ? 'price-stale' : undefined}>
-              {displayedBtcPrice}
-            </strong>
+            <div className="price-value">
+              <strong className={btcPrice.data?.isStale ? 'price-stale' : undefined}>
+                {displayedBtcPrice}
+              </strong>
+              {displayedChange24h && (
+                <small className={change24hClass}>
+                  {displayedChange24h}
+                </small>
+              )}
+            </div>
           </div>
         </div>
 

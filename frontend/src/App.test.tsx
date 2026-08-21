@@ -72,7 +72,13 @@ describe('hidden login', () => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ priceUsd: 123456.78, observedAt: new Date().toISOString(), source: 'coinbase', isStale: false }),
+          json: async () => ({
+            priceUsd: 123456.78,
+            change24hPercent: 2.3456,
+            observedAt: new Date().toISOString(),
+            source: 'coinbase',
+            isStale: false,
+          }),
         } as Response
       }
       return {
@@ -87,6 +93,7 @@ describe('hidden login', () => {
 
     renderApp()
     expect(await screen.findByText('$123,457')).toBeInTheDocument()
+    expect(screen.getByText('+2.35%')).toHaveClass('change-positive')
   })
 
   it('remembers the username only after a successful login', async () => {

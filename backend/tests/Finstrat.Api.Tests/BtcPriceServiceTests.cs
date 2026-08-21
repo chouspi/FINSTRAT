@@ -8,13 +8,14 @@ public sealed class BtcPriceServiceTests
     [Fact]
     public async Task Parses_price_and_reuses_it_during_minimum_refresh_interval()
     {
-        var handler = new StubHandler("""{"data":{"amount":"123456.78"}}""");
+        var handler = new StubHandler("""{"open":"120000.00","last":"123456.78"}""");
         var service = new BtcPriceService(new StubHttpClientFactory(handler));
 
         var first = await service.GetAsync(CancellationToken.None);
         var second = await service.GetAsync(CancellationToken.None);
 
         Assert.Equal(123456.78m, first.PriceUsd);
+        Assert.Equal(2.8807m, first.Change24hPercent);
         Assert.Equal("coinbase", first.Source);
         Assert.False(first.IsStale);
         Assert.Equal(first, second);

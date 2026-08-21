@@ -61,7 +61,7 @@ builder.Services.AddAntiforgery(options =>
 });
 builder.Services.AddHttpClient("btc-price", client =>
 {
-    client.BaseAddress = new Uri("https://api.coinbase.com/");
+    client.BaseAddress = new Uri("https://api.exchange.coinbase.com/");
     client.Timeout = TimeSpan.FromSeconds(4);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("FINSTRAT/2.0");
 });

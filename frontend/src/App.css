@@ -19,13 +19,6 @@
   z-index: 20;
 }
 
-.sidebar-topline {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  background: linear-gradient(90deg, var(--copper) 0 29%, rgba(203, 141, 77, 0.08) 29% 100%);
-}
-
 .brand-row {
   height: 52px;
   display: flex;
@@ -207,7 +200,6 @@
 .signed-in-user button {
   width: 34px;
   height: 30px;
-  border-left: 1px solid rgba(20, 32, 31, 0.12);
   color: #71807c;
   transition: color 160ms ease;
 }
@@ -275,6 +267,30 @@
   color: #e8ecea;
   font-size: 14px;
   font-weight: 700;
+}
+
+.price-value {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.price-value small {
+  font-size: 10px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.change-positive {
+  color: #55c989;
+}
+
+.change-negative {
+  color: #ef7272;
+}
+
+.change-neutral {
+  color: #879590;
 }
 
 .price-indicator .price-stale {
