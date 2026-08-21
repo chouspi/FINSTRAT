@@ -1,0 +1,12 @@
+{
+  "name": "finstrat-2",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "db:migrate": "node --env-file-if-exists=.env scripts/migrate-db.js",
+    "db:import:sqlite": "node --env-file-if-exists=.env scripts/import-sqlite.js"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}

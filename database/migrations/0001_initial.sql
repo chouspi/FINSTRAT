@@ -1,5 +1,3 @@
-BEGIN;
-
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE FUNCTION set_updated_at()
@@ -640,5 +638,3 @@ CREATE TRIGGER ownership_proofs_set_updated_at
 BEFORE UPDATE ON ownership_proofs FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER household_secrets_set_updated_at
 BEFORE UPDATE ON household_secrets FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-COMMIT;
