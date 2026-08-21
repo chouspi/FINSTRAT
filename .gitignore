@@ -1,4 +1,5 @@
-.env
+.env*
+!.env.example
 .idea/
 .vscode/
 node_modules/
@@ -8,3 +9,15 @@ bin/
 obj/
 *.user
 .vs/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.pfx
+*cookies*.txt
+backups/
+backend/DataProtectionKeys/*
+!backend/DataProtectionKeys/.keep
+appsettings.Local.json

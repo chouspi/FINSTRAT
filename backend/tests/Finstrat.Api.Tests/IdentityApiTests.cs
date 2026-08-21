@@ -113,7 +113,7 @@ public sealed class IdentityApiTests(IdentityApiFixture fixture)
                 userName = "private-owner",
                 displayName = "Private Owner",
                 email = "owner@example.test",
-                password = "Correct-Horse-2026!",
+                password = "Sample324",
                 role = "owner",
             }),
         };
@@ -128,7 +128,7 @@ public sealed class IdentityApiTests(IdentityApiFixture fixture)
             Content = JsonContent.Create(new
             {
                 identifier = "private-owner",
-                password = "Correct-Horse-2026!",
+                password = "Sample324",
             }),
         };
         loginRequest.Headers.Add("X-CSRF-TOKEN", token);

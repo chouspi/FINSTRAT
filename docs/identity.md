@@ -17,10 +17,10 @@ Uzivatel patri do domacnosti pres `household_members` s roli `owner`, `editor`
 nebo `viewer`. Role a aktivni domacnost jsou soucasti serverem podepsaneho
 principal ticketu.
 
-Kazdy `btc_accounts` ma prave jednoho `owner_user_id`. Pristup dalsich uzivatelu
-se uklada do `btc_account_shares`. Migrovane ucty vlastni defaultni identita.
-Pri zapisu se vlastnictvi i sdileni overuje kompozitnim cizim klicem proti
-clenstvi ve stejne domacnosti.
+Kazdy `btc_accounts` i `vwce_accounts` ma prave jednoho `owner_user_id`. Pristup
+dalsich uzivatelu k BTC uctu lze pozdeji ukladat do `btc_account_shares`.
+Pri zapisu se vlastnictvi overuje kompozitnim cizim klicem proti clenstvi ve
+stejne domacnosti. Dokud nevznikne sprava sdileni v UI, zadne ucty se nesdili.
 
 ## API
 
