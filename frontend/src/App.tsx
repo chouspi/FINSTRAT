@@ -40,7 +40,7 @@ const navigation: { label: string; items: NavItem[] }[] = [
   {
     label: 'Přehled',
     items: [
-      { label: 'Domov', icon: CircleGauge, active: true },
+      { label: 'Dashboard', icon: CircleGauge, active: true },
       { label: 'Portfolio', icon: ChartNoAxesCombined },
       { label: 'Strategie', icon: TrendingUp },
     ],
@@ -109,15 +109,6 @@ function App() {
 
   return (
     <div className="app-shell">
-      <button
-        className="mobile-menu"
-        type="button"
-        aria-label="Otevřít navigaci"
-        onClick={() => setSidebarOpen(true)}
-      >
-        <Menu size={20} />
-      </button>
-
       {sidebarOpen && (
         <button className="sidebar-scrim" type="button" aria-label="Zavřít navigaci" onClick={() => setSidebarOpen(false)} />
       )}
@@ -126,11 +117,10 @@ function App() {
         <div className="sidebar-topline" />
         <div className="brand-row">
           <button className="brand-mark" type="button" aria-label="FINSTRAT domů" onClick={handleLogoClick}>
-            <Bitcoin size={25} strokeWidth={2.3} />
+            <Bitcoin size={19} strokeWidth={2.2} />
           </button>
           <div className="brand-copy">
             <strong>FINSTRAT</strong>
-            <span>PRIVATE LEDGER</span>
           </div>
           <button className="sidebar-close" type="button" aria-label="Zavřít navigaci" onClick={() => setSidebarOpen(false)}>
             <X size={18} />
@@ -165,10 +155,6 @@ function App() {
             <Settings size={18} strokeWidth={1.8} />
             <span>Nastavení</span>
           </button>
-          <div className="security-note">
-            <ShieldCheck size={16} />
-            <span>Lokální privátní přehled</span>
-          </div>
           {signedInUser && (
             <div className="signed-in-user">
               <div className="user-avatar">{signedInUser.displayName.slice(0, 2).toUpperCase()}</div>
@@ -184,7 +170,43 @@ function App() {
         </div>
       </aside>
 
-      <main className="workspace" aria-label="Pracovní plocha" />
+      <div className="content-shell">
+        <header className="top-header">
+          <div className="header-title">
+            <button
+              className="mobile-menu"
+              type="button"
+              aria-label="Otevřít navigaci"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu size={19} />
+            </button>
+            <h1>Dashboard</h1>
+          </div>
+          <div className="header-indicators">
+            <div className="price-indicator" aria-label="Aktuální cena BTC v USD">
+              <span>BTC / USD</span>
+              <strong>$ —</strong>
+            </div>
+            <div className="strategy-indicator">
+              <div className="strategy-label">
+                <span>Strategy bar</span>
+                <strong>—</strong>
+              </div>
+              <div
+                className="strategy-track"
+                role="progressbar"
+                aria-label="Průběh strategie"
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <span />
+              </div>
+            </div>
+          </div>
+        </header>
+        <main className="workspace" aria-label="Pracovní plocha" />
+      </div>
 
       {loginOpen && (
         <LoginDialog
@@ -200,7 +222,9 @@ function App() {
 }
 
 function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => Promise<void> }) {
-  const [identifier, setIdentifier] = useState('')
+  const [rememberedIdentifier] = useState(() => localStorage.getItem('finstrat:last-username') ?? '')
+  const clearRememberedOnFocus = useRef(rememberedIdentifier.length > 0)
+  const [identifier, setIdentifier] = useState(rememberedIdentifier)
   const [password, setPassword] = useState('')
   const login = useMutation({
     mutationFn: async () => {
@@ -211,7 +235,10 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
         body: JSON.stringify({ identifier, password }),
       })
     },
-    onSuccess,
+    onSuccess: async () => {
+      localStorage.setItem('finstrat:last-username', identifier.trim())
+      await onSuccess()
+    },
   })
 
   return (
@@ -227,7 +254,22 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
         <form onSubmit={(event) => { event.preventDefault(); login.mutate() }}>
           <label>
             Uživatelské jméno
-            <input autoFocus autoComplete="username" value={identifier} onChange={(event) => setIdentifier(event.target.value)} required />
+            <input
+              autoFocus={rememberedIdentifier.length === 0}
+              autoComplete="username"
+              value={identifier}
+              onFocus={() => {
+                if (clearRememberedOnFocus.current && identifier === rememberedIdentifier) {
+                  setIdentifier('')
+                  clearRememberedOnFocus.current = false
+                }
+              }}
+              onChange={(event) => {
+                clearRememberedOnFocus.current = false
+                setIdentifier(event.target.value)
+              }}
+              required
+            />
           </label>
           <label>
             Heslo

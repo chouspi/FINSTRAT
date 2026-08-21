@@ -27,18 +27,18 @@
 }
 
 .brand-row {
-  height: 102px;
+  height: 52px;
   display: flex;
   align-items: center;
-  gap: 13px;
-  padding: 18px 23px 12px;
+  gap: 10px;
+  padding: 0 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .brand-mark {
-  width: 43px;
-  height: 43px;
-  flex: 0 0 43px;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   display: grid;
   place-items: center;
   border: 1px solid rgba(203, 141, 77, 0.68);
@@ -65,17 +65,9 @@
 
 .brand-copy strong {
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 19px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.08em;
-}
-
-.brand-copy span {
-  margin-top: 7px;
-  color: #84938f;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.24em;
 }
 
 .primary-nav {
@@ -151,19 +143,6 @@
   margin-bottom: 10px;
 }
 
-.security-note {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 11px 12px 2px;
-  color: #687a75;
-  font-size: 11px;
-}
-
-.security-note svg {
-  color: #899b95;
-}
-
 .signed-in-user {
   display: grid;
   grid-template-columns: 34px 1fr 30px;
@@ -224,8 +203,112 @@
   color: #82918d;
 }
 
-.workspace {
+.content-shell {
+  min-width: 0;
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.top-header {
+  height: 52px;
+  flex: 0 0 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(20, 32, 31, 0.13);
+  background: rgba(247, 245, 238, 0.92);
+  backdrop-filter: blur(10px);
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-title h1 {
+  margin: 0;
+  color: #1b2927;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.header-indicators {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+}
+
+.price-indicator {
+  min-width: 142px;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 18px;
+  border-left: 1px solid rgba(20, 32, 31, 0.09);
+  border-right: 1px solid rgba(20, 32, 31, 0.09);
+  font-variant-numeric: tabular-nums;
+}
+
+.price-indicator span,
+.strategy-label span {
+  color: #7c8985;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.price-indicator strong {
+  color: #283633;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.strategy-indicator {
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding-left: 18px;
+}
+
+.strategy-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.strategy-label strong {
+  color: #566561;
+  font-size: 10px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.strategy-track {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #d9d8d1;
+}
+
+.strategy-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--copper);
+}
+
+.workspace {
+  flex: 1;
+  min-height: calc(100vh - 52px);
   background:
     linear-gradient(rgba(20, 32, 31, 0.025) 1px, transparent 1px),
     linear-gradient(90deg, rgba(20, 32, 31, 0.025) 1px, transparent 1px),
@@ -388,19 +471,15 @@
   }
 
   .mobile-menu {
-    position: fixed;
-    top: 17px;
-    left: 17px;
-    z-index: 10;
-    width: 42px;
-    height: 42px;
+    width: 32px;
+    height: 32px;
     display: grid;
     place-items: center;
     border: 1px solid rgba(20, 32, 31, 0.16);
     border-radius: 50%;
     color: #22312f;
     background: rgba(242, 240, 233, 0.92);
-    box-shadow: 0 8px 24px rgba(19, 31, 29, 0.1);
+    box-shadow: none;
   }
 
   .sidebar-close {
@@ -420,8 +499,37 @@
     background: rgba(5, 12, 11, 0.5);
   }
 
+  .top-header {
+    height: 58px;
+    flex-basis: 58px;
+    padding: 0 16px;
+  }
+
+  .header-indicators {
+    margin-left: auto;
+  }
+
+  .price-indicator {
+    min-width: auto;
+    padding: 0 12px;
+    border-right: 0;
+  }
+
+  .price-indicator span {
+    display: none;
+  }
+
+  .strategy-indicator {
+    width: 92px;
+    padding-left: 12px;
+  }
+
+  .strategy-label span {
+    display: none;
+  }
+
   .workspace {
-    min-height: 100svh;
+    min-height: calc(100svh - 58px);
   }
 
   .login-dialog {
