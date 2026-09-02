@@ -238,7 +238,8 @@ function App() {
             <Bitcoin size={19} strokeWidth={2.2} />
           </button>
           <div className="brand-copy">
-            <strong>Portfolio</strong>
+            <strong>FINSTRAT</strong>
+            <span>Osobní finance</span>
           </div>
           <button ref={sidebarCloseButton} className="sidebar-close" type="button" aria-label="Zavřít navigaci" onClick={() => setSidebarOpen(false)}>
             <X size={18} />

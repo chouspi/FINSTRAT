@@ -716,9 +716,9 @@ body:has(.dialog-backdrop) {
 .app-shell{height:100vh;min-height:100vh;grid-template-columns:216px minmax(0,1fr);overflow:hidden;background:var(--bg-app);transition:grid-template-columns 180ms ease}
 .app-shell--sidebar-collapsed{grid-template-columns:52px minmax(0,1fr)}
 .sidebar{height:100vh;overflow:hidden;color:var(--text);background:var(--bg-panel);border-right:1px solid var(--border);box-shadow:none}
-.brand-row{height:52px;flex-shrink:0;padding:0 16px;border-color:var(--border)}
-.brand-mark{width:16px;height:24px;flex-basis:16px;border:0;border-radius:0;color:var(--accent);background:transparent}
-.brand-copy strong{font-family:inherit;font-size:13px;font-weight:600;letter-spacing:0}
+.brand-row{height:72px;flex-shrink:0;gap:11px;padding:0 20px;border-color:var(--border)}
+.brand-mark{width:34px;height:34px;flex-basis:34px;border:1px solid color-mix(in srgb,var(--accent) 48%,var(--border));border-radius:10px;color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--bg-surface))}
+.brand-copy{gap:4px;line-height:1;user-select:none}.brand-copy strong{font-family:inherit;font-size:13px;font-weight:750;letter-spacing:.12em}.brand-copy span{color:var(--text-muted);font-size:10px;font-weight:550;letter-spacing:.03em}
 .primary-nav{min-height:0;overflow-y:auto;padding:6px 6px 0;scrollbar-width:thin}.nav-section+.nav-section{margin-top:0}.nav-section>p{display:none}
 .nav-item{min-height:35px;gap:9px;padding:8px 10px;border-radius:6px;color:var(--text-sub);font-size:13px;font-weight:500}
 .nav-item:hover{color:var(--text);background:var(--bg-hover)}.nav-item--active{color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
