@@ -67,6 +67,37 @@ public static class IdentityEndpoints
             return Results.NoContent();
         }).AddEndpointFilter<AntiforgeryEndpointFilter>().RequireAuthorization();
 
+        group.MapPost("/renew", async (
+            HttpContext context,
+            UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager) =>
+        {
+            var authentication = await context.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+            if (!authentication.Succeeded
+                || authentication.Properties?.ExpiresUtc is not { } expiresAt
+                || expiresAt <= DateTimeOffset.UtcNow)
+            {
+                return Results.Unauthorized();
+            }
+
+            var userId = userManager.GetUserId(authentication.Principal!);
+            var user = userId is null ? null : await userManager.FindByIdAsync(userId);
+            if (user is null || user.IsDefault || user.DisabledAt is not null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            await signInManager.SignInAsync(user, new AuthenticationProperties
+            {
+                IsPersistent = false,
+                IssuedUtc = now,
+                ExpiresUtc = now.AddMinutes(15),
+                AllowRefresh = false,
+            });
+            return Results.NoContent();
+        }).AddEndpointFilter<AntiforgeryEndpointFilter>().RequireAuthorization();
+
         group.MapGet("/users", async (
             ClaimsPrincipal principal,
             ApplicationDbContext dbContext,

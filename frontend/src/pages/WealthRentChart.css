@@ -1,0 +1,7 @@
+.wealth-rent-chart{position:relative;width:100%;min-height:220px}
+.wealth-rent-chart svg{display:block;width:100%;height:auto;overflow:visible}
+.wealth-rent-area{fill:color-mix(in srgb,#3b82f6 14%,transparent)}
+.wealth-rent-line{fill:none;stroke:#3b82f6;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.wealth-rent-point{fill:#3b82f6;stroke:var(--bg-panel);stroke-width:2}
+.wealth-legend i.rent{background:#3b82f6}
+@container(max-width:650px){.wealth-rent-chart{min-height:170px}}

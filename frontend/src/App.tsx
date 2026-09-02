@@ -1,18 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, Outlet, useRouterState } from '@tanstack/react-router'
+import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import {
+  ArrowLeftRight,
+  Banknote,
   Bitcoin,
   BookOpenCheck,
   ChartNoAxesCombined,
   ChevronRight,
   CircleGauge,
-  Coins,
   Landmark,
   LogOut,
   Menu,
-  ReceiptText,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  RefreshCw,
   Settings,
+  SlidersHorizontal,
   ShieldCheck,
   TrendingUp,
   WalletCards,
@@ -20,6 +26,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { antiforgeryToken, apiRequest } from './lib/api'
+import type { StrategyOverview } from './lib/strategy'
 import './App.css'
 
 type CurrentUser = {
@@ -35,41 +42,38 @@ type CurrentUser = {
 
 type BtcPrice = {
   priceUsd: number
+  priceCzk: number
   change24hPercent: number
   observedAt: string
   source: string
   isStale: boolean
 }
 
+type VwceSidebarOverview = {
+  totals: { shares: number; costBasisCzk: number; rentRatePercent: number }
+}
+
+type VwcePrice = { priceCzk: number }
+
 type NavItem = {
   label: string
   icon: LucideIcon
-  href?: '/' | '/bitcoin'
+  href?: '/' | '/wealth' | '/strategy' | '/taxes' | '/income-plan' | '/bitcoin' | '/vwce' | '/debts' | '/settings'
 }
 
 const navigation: { label: string; items: NavItem[] }[] = [
   {
-    label: 'Přehled',
+    label: 'Navigace',
     items: [
       { label: 'Dashboard', icon: CircleGauge, href: '/' },
-      { label: 'Portfolio', icon: ChartNoAxesCombined },
-      { label: 'Strategie', icon: TrendingUp },
-    ],
-  },
-  {
-    label: 'Majetek',
-    items: [
-      { label: 'Bitcoin', icon: Bitcoin, href: '/bitcoin' },
-      { label: 'VWCE', icon: Landmark },
-      { label: 'Dluhy', icon: WalletCards },
-      { label: 'Výdaje', icon: ReceiptText },
-    ],
-  },
-  {
-    label: 'Evidence',
-    items: [
-      { label: 'Časový test', icon: Coins },
-      { label: 'Doklady', icon: BookOpenCheck },
+      { label: 'Income plán', icon: Banknote, href: '/income-plan' },
+      { label: 'Jmění', icon: ChartNoAxesCombined, href: '/wealth' },
+      { label: 'Strategie', icon: TrendingUp, href: '/strategy' },
+      { label: 'BTC Účty', icon: Bitcoin, href: '/bitcoin' },
+      { label: 'VWCE', icon: Landmark, href: '/vwce' },
+      { label: 'Dluhy', icon: WalletCards, href: '/debts' },
+      { label: 'Daně', icon: BookOpenCheck, href: '/taxes' },
+      { label: 'Nastavení', icon: Settings, href: '/settings' },
     ],
   },
 ]
@@ -84,13 +88,23 @@ const percentFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 })
+const czkFormatter = new Intl.NumberFormat('cs-CZ', {
+  style: 'currency',
+  currency: 'CZK',
+  maximumFractionDigits: 0,
+})
 
 function App() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [loginOpen, setLoginOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const logoClicks = useRef<number[]>([])
+  const menuButton = useRef<HTMLButtonElement>(null)
+  const sidebarCloseButton = useRef<HTMLButtonElement>(null)
   const currentUser = useQuery({
     queryKey: ['identity', 'me'],
     queryFn: () => apiRequest<CurrentUser>('/api/identity/me'),
@@ -99,6 +113,21 @@ function App() {
   const btcPrice = useQuery({
     queryKey: ['market-data', 'btc-price'],
     queryFn: () => apiRequest<BtcPrice>('/api/market-data/btc-price'),
+    retry: false,
+  })
+  const vwceOverview = useQuery({
+    queryKey: ['vwce', 'overview'],
+    queryFn: () => apiRequest<VwceSidebarOverview>('/api/vwce/overview'),
+    retry: false,
+  })
+  const vwcePrice = useQuery({
+    queryKey: ['market-data', 'vwce-price'],
+    queryFn: () => apiRequest<VwcePrice>('/api/market-data/vwce-price'),
+    retry: false,
+  })
+  const strategyOverview = useQuery({
+    queryKey: ['strategy', 'overview'],
+    queryFn: () => apiRequest<StrategyOverview>('/api/strategy/overview'),
     retry: false,
   })
   const logout = useMutation({
@@ -110,10 +139,57 @@ function App() {
       })
     },
     onSuccess: async () => {
-      queryClient.removeQueries({ queryKey: ['bitcoin'] })
+      await queryClient.invalidateQueries({ queryKey: ['identity', 'me'] })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['bitcoin'] }),
+        queryClient.invalidateQueries({ queryKey: ['vwce'] }),
+        queryClient.invalidateQueries({ queryKey: ['wealth'] }),
+      ])
+    },
+  })
+  const renewSession = useMutation({
+    mutationFn: async () => {
+      const token = await antiforgeryToken()
+      await apiRequest<void>('/api/identity/renew', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': token },
+      })
+    },
+    onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: ['identity', 'me'] })
     },
   })
+
+  useEffect(() => {
+    if (!sidebarOpen) return
+
+    const menuTrigger = menuButton.current
+    document.body.classList.add('sidebar-open')
+    sidebarCloseButton.current?.focus()
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSidebarOpen(false)
+    }
+    document.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.body.classList.remove('sidebar-open')
+      document.removeEventListener('keydown', closeOnEscape)
+      menuTrigger?.focus()
+    }
+  }, [sidebarOpen])
+
+  useEffect(() => {
+    if (!moreOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreOpen(false)
+    }
+    document.body.classList.add('bottom-nav-open')
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.classList.remove('bottom-nav-open')
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [moreOpen])
 
   function handleLogoClick() {
     const now = Date.now()
@@ -136,22 +212,35 @@ function App() {
   const change24hClass = typeof change24h !== 'number' || change24h === 0
     ? 'change-neutral'
     : change24h > 0 ? 'change-positive' : 'change-negative'
+  const priceCzk = btcPrice.data?.priceCzk
+  const displayedBtcPriceCzk = typeof priceCzk === 'number' && Number.isFinite(priceCzk)
+    ? czkFormatter.format(priceCzk)
+    : null
+  const vwceTotals = vwceOverview.data?.totals
+  const currentVwcePrice = vwcePrice.data?.priceCzk
+  const vwceMonthlyRent = vwceTotals
+    && typeof vwceTotals.shares === 'number'
+    && typeof vwceTotals.rentRatePercent === 'number'
+    && typeof currentVwcePrice === 'number'
+    && Number.isFinite(currentVwcePrice)
+    ? vwceTotals.shares * currentVwcePrice * vwceTotals.rentRatePercent / 100 / 12
+    : null
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}`}>
       {sidebarOpen && (
         <button className="sidebar-scrim" type="button" aria-label="Zavřít navigaci" onClick={() => setSidebarOpen(false)} />
       )}
 
-      <aside className={`sidebar${sidebarOpen ? ' sidebar--open' : ''}`}>
+      <aside id="primary-navigation" className={`sidebar${sidebarOpen ? ' sidebar--open' : ''}${sidebarCollapsed ? ' sidebar--collapsed' : ''}`} aria-label="Hlavní navigace">
         <div className="brand-row">
           <button className="brand-mark" type="button" aria-label="FINSTRAT domů" onClick={handleLogoClick}>
             <Bitcoin size={19} strokeWidth={2.2} />
           </button>
           <div className="brand-copy">
-            <strong>FINSTRAT</strong>
+            <strong>Portfolio</strong>
           </div>
-          <button className="sidebar-close" type="button" aria-label="Zavřít navigaci" onClick={() => setSidebarOpen(false)}>
+          <button ref={sidebarCloseButton} className="sidebar-close" type="button" aria-label="Zavřít navigaci" onClick={() => setSidebarOpen(false)}>
             <X size={18} />
           </button>
         </div>
@@ -176,6 +265,7 @@ function App() {
                       className={`nav-item${isActive ? ' nav-item--active' : ''}`}
                       to={item.href}
                       key={item.label}
+                      title={sidebarCollapsed ? item.label : undefined}
                       aria-current={isActive ? 'page' : undefined}
                       onClick={() => setSidebarOpen(false)}
                     >
@@ -188,6 +278,7 @@ function App() {
                     className="nav-item"
                     type="button"
                     key={item.label}
+                    title={sidebarCollapsed ? item.label : undefined}
                   >
                     {content}
                   </button>
@@ -200,8 +291,8 @@ function App() {
         <div className="sidebar-metrics">
           <div className="strategy-indicator">
             <div className="strategy-label">
-              <span>Strategy bar</span>
-              <strong>—</strong>
+              <span>{strategyOverview.data?.checkpointActive ? 'Trigger' : 'Aktivace'}</span>
+              <strong>{strategyOverview.data?.recommendation === 'PRODAT' ? 'PRODAT' : `${Math.round(strategyOverview.data?.progressPercent ?? 0)} %`}</strong>
             </div>
             <div
               className="strategy-track"
@@ -209,30 +300,33 @@ function App() {
               aria-label="Průběh strategie"
               aria-valuemin={0}
               aria-valuemax={100}
+              aria-valuenow={Math.round(strategyOverview.data?.progressPercent ?? 0)}
             >
-              <span />
+              <span style={{ width: `${Math.min(100, Math.max(0, strategyOverview.data?.progressPercent ?? 0))}%` }} />
             </div>
           </div>
+          {vwceMonthlyRent !== null && (
+            <div className="rent-indicator">
+              <span>VWCE renta / měs.</span>
+              <strong>{czkFormatter.format(vwceMonthlyRent)}</strong>
+            </div>
+          )}
           <div className="price-indicator" aria-label="Aktuální cena BTC v USD">
-            <span>BTC / USD</span>
+            <div className="price-heading">
+              <span>BTC / USD</span>
+              <button type="button" aria-label="Obnovit cenu BTC" onClick={() => void btcPrice.refetch()}><RefreshCw size={11} /></button>
+            </div>
             <div className="price-value">
               <strong className={btcPrice.data?.isStale ? 'price-stale' : undefined}>
                 {displayedBtcPrice}
               </strong>
-              {displayedChange24h && (
-                <small className={change24hClass}>
-                  {displayedChange24h}
-                </small>
-              )}
+              {displayedBtcPriceCzk && <small>{displayedBtcPriceCzk}</small>}
             </div>
           </div>
         </div>
 
         <div className="sidebar-footer">
-          <button className="nav-item settings-item" type="button">
-            <Settings size={18} strokeWidth={1.8} />
-            <span>Nastavení</span>
-          </button>
+          <button className="sidebar-collapse" type="button" aria-label={sidebarCollapsed ? 'Rozbalit navigaci' : 'Sbalit navigaci'} onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}>{sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}</button>
         </div>
       </aside>
 
@@ -240,16 +334,28 @@ function App() {
         <header className="top-header">
           <div className="header-leading">
             <button
+              ref={menuButton}
               className="mobile-menu"
               type="button"
               aria-label="Otevřít navigaci"
+              aria-controls="primary-navigation"
+              aria-expanded={sidebarOpen}
               onClick={() => setSidebarOpen(true)}
             >
               <Menu size={19} />
             </button>
             {signedInUser && (
               <div className="signed-in-user">
-                <div className="user-avatar">{signedInUser.displayName.slice(0, 2).toUpperCase()}</div>
+                <button
+                  className="user-avatar"
+                  type="button"
+                  title="Prodloužit relaci o 15 minut"
+                  aria-label="Prodloužit relaci o 15 minut"
+                  disabled={renewSession.isPending}
+                  onClick={() => renewSession.mutate()}
+                >
+                  {signedInUser.displayName.slice(0, 2).toUpperCase()}
+                </button>
                 <div>
                   <strong>{signedInUser.displayName}</strong>
                   <SessionRemaining expiresAt={signedInUser.sessionExpiresAt} />
@@ -260,18 +366,79 @@ function App() {
               </div>
             )}
           </div>
-          <h1 className="header-title">{pathname === '/bitcoin' ? 'Bitcoin' : 'Dashboard'}</h1>
-          <div aria-hidden="true" />
+          <div className="header-heading">
+            <button className="mobile-login-logo" type="button" aria-label="Otevřít přihlášení" onClick={handleLogoClick}><Bitcoin size={18} strokeWidth={2.2} /></button>
+             <h1 className="header-title">{pathname === '/bitcoin' ? 'BTC Účty' : pathname === '/vwce' ? 'VWCE' : pathname === '/debts' ? 'Dluhy' : pathname === '/income-plan' ? 'Income plán' : pathname === '/wealth' ? 'Jmění' : pathname === '/strategy' ? 'Strategie' : pathname === '/taxes' ? 'Daně' : pathname === '/settings' ? 'Nastavení' : 'Dashboard'}</h1>
+          </div>
+          {pathname === '/bitcoin' ? (
+            <div className="header-actions">
+              <button
+                className="header-action header-action--secondary"
+                type="button"
+                onClick={() => void navigate({ to: '/bitcoin', search: { dialog: 'transfer' } })}
+              >
+                <ArrowLeftRight size={15} />
+                <span>Převod</span>
+              </button>
+              <button
+                className="header-action header-action--primary"
+                type="button"
+                onClick={() => void navigate({ to: '/bitcoin', search: { dialog: 'account' } })}
+              >
+                <Plus size={15} />
+                <span>Přidat účet</span>
+              </button>
+            </div>
+          ) : pathname === '/vwce' ? (
+            <div className="header-actions">
+              <button
+                className="header-action header-action--secondary header-action--payout"
+                type="button"
+                onClick={() => void navigate({ to: '/vwce', search: { dialog: 'payout' } })}
+              >
+                <Banknote size={15} />
+                <span>Vyplatit</span>
+              </button>
+              <button
+                className="header-action header-action--primary"
+                type="button"
+                onClick={() => void navigate({ to: '/vwce', search: { dialog: 'account' } })}
+              >
+                <Plus size={15} />
+                <span>Nový účet</span>
+              </button>
+            </div>
+          ) : pathname === '/debts' ? (
+            <div className="header-actions">
+              <button className="header-action header-action--secondary" type="button" onClick={() => void navigate({ to: '/debts', search: { dialog: 'manage' } })}><SlidersHorizontal size={15} /><span>Správa dluhů</span></button>
+              <button className="header-action header-action--secondary header-action--payout" type="button" onClick={() => void navigate({ to: '/debts', search: { dialog: 'payment' } })}><Banknote size={15} /><span>Zapsat splátku</span></button>
+              <button className="header-action header-action--primary" type="button" onClick={() => void navigate({ to: '/debts', search: { dialog: 'debt' } })}><Plus size={15} /><span>Přidat dluh</span></button>
+            </div>
+          ) : pathname === '/income-plan' && signedInUser ? (
+            <div className="header-actions">
+              <button className="income-header-action" type="button" onClick={() => void navigate({ to: '/income-plan', search: { dialog: 'process' } })}><Banknote size={14} /><span>Zpracovat příjem</span></button>
+            </div>
+          ) : <div aria-hidden="true" />}
         </header>
         <main className="workspace" aria-label="Pracovní plocha"><Outlet /></main>
       </div>
+
+      {moreOpen && <div className="more-sheet-backdrop" role="presentation" onClick={() => setMoreOpen(false)}><section className="more-sheet" aria-label="Další navigace" onClick={(event) => event.stopPropagation()}><div className="sheet-handle" /><div className="sheet-title"><button className="sheet-brand" type="button" onClick={handleLogoClick}><Bitcoin size={15} /> Portfolio</button><button type="button" aria-label="Zavřít další navigaci" onClick={() => setMoreOpen(false)}><X size={18} /></button></div><Link to="/wealth" search={{ tab: undefined }} className={pathname === '/wealth' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><ChartNoAxesCombined size={18} />Jmění</Link><Link to="/strategy" className={pathname === '/strategy' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><TrendingUp size={18} />Strategie</Link><Link to="/debts" search={{ dialog: undefined }} className={pathname === '/debts' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><WalletCards size={18} />Dluhy</Link><Link to="/taxes" className={pathname === '/taxes' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><BookOpenCheck size={18} />Daně</Link><Link className={pathname === '/settings' ? 'sheet-link active' : 'sheet-link'} to="/settings" search={{ tab: undefined }} onClick={() => setMoreOpen(false)}><Settings size={18} />Nastavení</Link><div className="sheet-price"><span>BTC / USD</span><strong>{displayedBtcPrice}</strong>{displayedChange24h && <small className={change24hClass}>{displayedChange24h}</small>}</div></section></div>}
+
+      <nav className="bottom-nav" aria-label="Mobilní navigace"><Link to="/" className={pathname === '/' ? 'active' : undefined}><CircleGauge size={20} /><span>Dashboard</span></Link><Link to="/income-plan" search={{ dialog: undefined }} className={pathname === '/income-plan' ? 'active' : undefined}><Banknote size={20} /><span>Income</span></Link><Link to="/bitcoin" search={{ dialog: undefined }} className={pathname === '/bitcoin' ? 'active' : undefined}><Bitcoin size={20} /><span>BTC Účty</span></Link><Link to="/vwce" search={{ dialog: undefined }} className={pathname === '/vwce' ? 'active' : undefined}><Landmark size={20} /><span>VWCE</span></Link><button type="button" className={pathname === '/wealth' || pathname === '/strategy' || pathname === '/taxes' || pathname === '/debts' || pathname === '/settings' || moreOpen ? 'active' : undefined} aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}><MoreHorizontal size={20} /><span>Více</span></button></nav>
 
       {loginOpen && (
         <LoginDialog
           onClose={() => setLoginOpen(false)}
           onSuccess={async () => {
-            queryClient.removeQueries({ queryKey: ['bitcoin'] })
             await queryClient.invalidateQueries({ queryKey: ['identity', 'me'] })
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ['bitcoin'] }),
+              queryClient.invalidateQueries({ queryKey: ['vwce'] }),
+              queryClient.invalidateQueries({ queryKey: ['debts'] }),
+              queryClient.invalidateQueries({ queryKey: ['income-plan'] }),
+              queryClient.invalidateQueries({ queryKey: ['wealth'] }),
+            ])
             setLoginOpen(false)
           }}
         />

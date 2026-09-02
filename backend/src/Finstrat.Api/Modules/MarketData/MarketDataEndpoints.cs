@@ -26,6 +26,26 @@ public static class MarketDataEndpoints
         .WithTags("Market Data")
         .RequireAuthorization();
 
+        endpoints.MapGet("/api/market-data/vwce-price", async (
+            VwcePriceService priceService,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await priceService.GetAsync(cancellationToken));
+            }
+            catch (Exception exception) when (
+                (exception is HttpRequestException or JsonException or InvalidOperationException or TaskCanceledException)
+                && !cancellationToken.IsCancellationRequested)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status503ServiceUnavailable,
+                    title: "VWCE price is temporarily unavailable");
+            }
+        })
+        .WithTags("Market Data")
+        .RequireAuthorization();
+
         return endpoints;
     }
 }

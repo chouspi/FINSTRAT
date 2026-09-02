@@ -76,6 +76,12 @@ verzi algoritmu a kvalitu vypoctu. `portfolio_snapshots` pak obsahuje denni
 agregat a volitelne pouzite ceny. Rekonstruovany snapshot je odlisitelny od
 pozorovaneho.
 
+`wealth_snapshots` je presna denni, uzivatelsky oddelena rada pro Dashboard.
+Uklada mnozstvi, pouzite CZK ceny, trzni hodnoty a porizovaci ceny BTC/VWCE,
+spotrebitelske dluhy a hypoteku. Hlavni hodnota je `BTC + VWCE - spotrebitelske
+dluhy`; Cash ani hypoteka se do ni nezapocitavaji. Server aktualizuje dnesni bod
+pri nacteni a planovany job jej uzavira v 23:55 casove zony domacnosti.
+
 ### Audit, tajemstvi a idempotence
 
 `audit_events` zapisuje server, aktera, request a dotcenou entitu. Webhook a

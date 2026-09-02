@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -35,7 +36,15 @@ public sealed class IdentityApiFixture : WebApplicationFactory<Program>, IAsyncL
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Database"] = _postgres.GetConnectionString(),
+                ["WealthSnapshots:SchedulerEnabled"] = "false",
             });
+        });
+        builder.ConfigureServices(services =>
+        {
+            services.AddHttpClient("vwce-price")
+                .ConfigurePrimaryHttpMessageHandler(() => new VwcePriceHandler());
+            services.AddHttpClient("btc-price")
+                .ConfigurePrimaryHttpMessageHandler(() => new BtcPriceHandler());
         });
     }
 
@@ -61,6 +70,36 @@ public sealed class IdentityApiFixture : WebApplicationFactory<Program>, IAsyncL
             directory = directory.Parent;
         }
         return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root not found.");
+    }
+
+    private sealed class VwcePriceHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var price = request.RequestUri?.AbsolutePath.Contains("EURCZK") == true ? "25.0" : "160.0";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"chart\":{\"result\":[{\"meta\":{\"regularMarketPrice\":" + price + "}}]}}"),
+            });
+        }
+    }
+
+    private sealed class BtcPriceHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var json = request.RequestUri?.AbsolutePath.Contains("stats") == true
+                ? "{\"last\":\"3000000\",\"open\":\"2900000\"}"
+                : "{\"data\":{\"amount\":\"3000000\"}}";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json),
+            });
+        }
     }
 }
 
@@ -140,6 +179,12 @@ public sealed class IdentityApiTests(IdentityApiFixture fixture)
         Assert.Equal("private-owner", current.GetProperty("userName").GetString());
         Assert.False(current.GetProperty("isDefault").GetBoolean());
         Assert.True(current.GetProperty("sessionExpiresAt").GetDateTimeOffset() > DateTimeOffset.UtcNow);
+
+        token = await GetAntiforgeryToken(client);
+        using var renewRequest = new HttpRequestMessage(HttpMethod.Post, "/api/identity/renew");
+        renewRequest.Headers.Add("X-CSRF-TOKEN", token);
+        var renewResponse = await client.SendAsync(renewRequest);
+        Assert.Equal(HttpStatusCode.NoContent, renewResponse.StatusCode);
     }
 
     private static async Task<string> GetAntiforgeryToken(HttpClient client)

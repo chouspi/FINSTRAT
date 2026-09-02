@@ -1,0 +1,10 @@
+.settings-tabs{min-height:50px;display:flex;align-items:end;gap:22px;padding:0 var(--page-pad);border-bottom:1px solid var(--border)}
+.settings-tabs button{height:50px;padding:0 2px;border:0;border-bottom:2px solid transparent;color:var(--text-muted);background:transparent;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.settings-tabs button[aria-selected=true]{border-bottom-color:var(--accent);color:var(--text)}
+.settings-pane{width:100%}
+.strategy-settings-card{width:min(720px,calc(100% - var(--page-pad) * 2));margin:22px var(--page-pad);overflow:hidden;border:1px solid var(--border);border-radius:10px;background:var(--bg-surface)}
+.strategy-auto,.strategy-setting-row{min-height:58px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:8px 18px;border-bottom:1px solid var(--border);color:var(--text-sub);font-size:12px}
+.strategy-setting-row:last-child{border-bottom:0}.strategy-auto>span{display:flex;flex-direction:column;gap:4px}.strategy-auto strong{color:var(--text);font-size:12px}.strategy-auto small{color:var(--text-muted);font-size:10px}.strategy-auto input{width:17px;height:17px;accent-color:var(--accent)}
+.strategy-number-control{width:180px;height:38px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:0 10px;border:1px solid var(--border-sub);border-radius:7px;background:var(--bg-app)}
+.strategy-number-control:focus-within{border-color:var(--accent)}.strategy-number-control input{width:100%;min-width:0;border:0;outline:0;color:var(--text);background:transparent;text-align:right;font:inherit;font-size:12px;font-variant-numeric:tabular-nums}.strategy-number-control b{color:var(--text-muted);font-size:10px;font-weight:500;white-space:nowrap}
+@media(max-width:600px){.strategy-settings-card{width:calc(100% - 32px);margin:16px}.strategy-auto,.strategy-setting-row{align-items:flex-start;flex-direction:column;gap:8px}.strategy-auto{position:relative;padding-right:50px}.strategy-auto input{position:absolute;top:14px;right:18px}.strategy-number-control{width:100%}}

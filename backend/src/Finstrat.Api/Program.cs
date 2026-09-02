@@ -1,8 +1,14 @@
 using Finstrat.Api.Infrastructure.Persistence;
 using Finstrat.Api.Modules.Bitcoin;
+using Finstrat.Api.Modules.Debts;
 using Finstrat.Api.Modules.Identity;
 using Finstrat.Api.Modules.Identity.Domain;
+using Finstrat.Api.Modules.IncomePlan;
 using Finstrat.Api.Modules.MarketData;
+using Finstrat.Api.Modules.Strategy;
+using Finstrat.Api.Modules.Taxes;
+using Finstrat.Api.Modules.Vwce;
+using Finstrat.Api.Modules.Wealth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -66,8 +72,25 @@ builder.Services.AddHttpClient("btc-price", client =>
     client.Timeout = TimeSpan.FromSeconds(4);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("FINSTRAT/2.0");
 });
+builder.Services.AddHttpClient("vwce-price", client =>
+{
+    client.BaseAddress = new Uri("https://query1.finance.yahoo.com/");
+    client.Timeout = TimeSpan.FromSeconds(8);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("FINSTRAT/2.0");
+});
 builder.Services.AddSingleton<BtcPriceService>();
+builder.Services.AddSingleton<VwcePriceService>();
 builder.Services.AddScoped<BitcoinQueryService>();
+builder.Services.AddScoped<BitcoinCommandService>();
+builder.Services.AddScoped<VwceQueryService>();
+builder.Services.AddScoped<VwceCommandService>();
+builder.Services.AddScoped<DebtQueryService>();
+builder.Services.AddScoped<DebtCommandService>();
+builder.Services.AddScoped<IncomePlanService>();
+builder.Services.AddScoped<StrategyService>();
+builder.Services.AddScoped<TaxesService>();
+builder.Services.AddScoped<WealthSnapshotService>();
+builder.Services.AddHostedService<WealthSnapshotWorker>();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -82,6 +105,12 @@ app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
 app.MapIdentityEndpoints();
 app.MapMarketDataEndpoints();
 app.MapBitcoinEndpoints();
+app.MapVwceEndpoints();
+app.MapDebtEndpoints();
+app.MapIncomePlanEndpoints();
+app.MapStrategyEndpoints();
+app.MapTaxesEndpoints();
+app.MapWealthEndpoints();
 
 app.Run();
 

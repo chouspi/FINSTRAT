@@ -1,0 +1,5 @@
+.debt-amount-field{position:relative}
+.debt-amount-field>label{display:flex}
+.debt-amount-field>button{position:absolute;top:0;right:0;padding:0;border:0;color:var(--accent);background:transparent;font:inherit;font-size:10px;font-weight:700;cursor:pointer}
+.scheduled-payment-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px}
+.scheduled-payment-actions .scheduled-payment-delete{width:34px;padding:0;color:var(--red);background:color-mix(in srgb,var(--red) 8%,var(--bg-surface));border-color:color-mix(in srgb,var(--red) 25%,var(--border))}

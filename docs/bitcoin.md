@@ -15,8 +15,10 @@ projevi pres `costBasisComplete: false`, ne tichym doplnenim nulove ceny.
 
 Frontendova route `/bitcoin` obsahuje:
 
-- souhrn drzenych BTC, USD hodnoty, CZK nakladove baze a poctu uctu;
-- seznam pristupnych uctu s vlastnikem, zustatkem a dukazy vlastnictvi;
+- souhrn drzenych BTC a celkove hodnoty i porizovaci ceny v CZK;
+- rozbalovaci seznam pristupnych uctu se zustatkem, doklady a vlastnikem;
+- owner-only prepinac sdileni uctu s defaultnim uzivatelem;
+- idempotentni nakup, FIFO vyber a interni prevod mezi vlastnimi ucty;
 - posledni nakupy, vybery a interni pohyby;
 - samostatny prazdny, loading a error stav.
 
