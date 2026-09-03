@@ -42,19 +42,18 @@ type Settings = {
 type PlanDebt = { id: string; name: string; priority: number; balanceCzk: number };
 type Overview = { settings: Settings; debts: PlanDebt[]; scheduledDebtPaymentCzk?: number; deferredVwceCzk?: number };
 type CurrentUser = { isDefault: boolean };
+type BalanceWatch = { watchId: string; currency: "czk"; initialBalance: number; expiresInSeconds: number };
+type BalanceWatchResult = { changed: boolean; currency: "czk"; balance: number };
 type WatchState = { watchId: string; phase: "idle" | "starting" | "ready" | "waiting" | "confirmed" | "error"; error: string };
 type DebtPaymentPlan = { debt: PlanDebt; amount: number; freshAmount: number; deferredAmount: number };
 type CoinmatePurchaseResult = { success: boolean; btcBought: number; status: string; pending: boolean };
 type BitcoinPurchaseOverview = { accounts: { id: string; name: string; canManage: boolean }[] };
-type BtcPrice = { priceCzk: number };
 
 const czk = new Intl.NumberFormat("cs-CZ", {
   style: "currency",
   currency: "CZK",
   maximumFractionDigits: 0,
 });
-const coinmateDevDelayMs = import.meta.env.MODE === "test" ? 1 : 2_000;
-const coinmateDevDelay = () => new Promise<void>((resolve) => window.setTimeout(resolve, coinmateDevDelayMs));
 
 export function IncomePlanPage() {
   const { dialog } = useSearch({ from: "/income-plan" });
@@ -175,32 +174,60 @@ function CashPaymentQr({ amountCzk, iban, onComplete }: { amountCzk: number; iba
 }
 
 function useCoinmateBalanceWatch(active: boolean, waiting: boolean) {
-  const [watch, setWatch] = useState<WatchState>({ watchId: "dev-simulation", phase: "ready", error: "" });
-
-  /* Production Coinmate watcher, enable when the controller is reachable from this environment:
-  const token = await antiforgeryToken();
-  const created = await apiRequest<BalanceWatch>("/api/income-plan/coinmate-balance-watch", {
-    method: "POST", headers: { "X-CSRF-TOKEN": token },
-  });
-  const heartbeat = window.setInterval(async () => {
-    const csrf = await antiforgeryToken();
-    await apiRequest(`/api/income-plan/coinmate-balance-watch/${created.watchId}/ping`, {
-      method: "POST", headers: { "X-CSRF-TOKEN": csrf },
-    });
-  }, 15_000);
-  const result = await apiRequest<BalanceWatchResult>(`/api/income-plan/coinmate-balance-watch/${created.watchId}`);
-  window.clearInterval(heartbeat);
-  if (result.changed) setWatch({ watchId: created.watchId, phase: "confirmed", error: "" });
-  */
+  const [attempt, setAttempt] = useState(0);
+  const [watch, setWatch] = useState<WatchState>(() => active
+    ? { watchId: "", phase: "starting", error: "" }
+    : { watchId: "", phase: "idle", error: "" });
 
   useEffect(() => {
-    if (!active || !waiting || !watch.watchId || watch.phase === "confirmed") return;
+    if (!active) return;
     let current = true;
-    const timer = window.setTimeout(() => {
-      if (current) setWatch((value) => ({ ...value, phase: "confirmed", error: "" }));
-    }, coinmateDevDelayMs);
-    return () => { current = false; window.clearTimeout(timer); };
-  }, [active, waiting, watch.watchId, watch.phase]);
+    void (async () => {
+      try {
+        const token = await antiforgeryToken();
+        const created = await apiRequest<BalanceWatch>("/api/income-plan/coinmate-balance-watch", {
+          method: "POST",
+          headers: { "X-CSRF-TOKEN": token },
+        });
+        if (current) setWatch({ watchId: created.watchId, phase: "ready", error: "" });
+      } catch (error) {
+        if (current) setWatch({ watchId: "", phase: "error", error: error instanceof Error ? error.message : "Sledování zůstatku se nepodařilo spustit." });
+      }
+    })();
+    return () => { current = false; };
+  }, [active, attempt]);
+
+  useEffect(() => {
+    if (!active || !watch.watchId || watch.phase === "confirmed" || watch.phase === "error") return;
+    let current = true;
+    const heartbeat = window.setInterval(() => {
+      void (async () => {
+        try {
+          const token = await antiforgeryToken();
+          await apiRequest(`/api/income-plan/coinmate-balance-watch/${watch.watchId}/ping`, { method: "POST", headers: { "X-CSRF-TOKEN": token } });
+        } catch (error) {
+          if (current) setWatch({ watchId: "", phase: "error", error: error instanceof Error ? error.message : "Sledování zůstatku bylo přerušeno." });
+        }
+      })();
+    }, 15_000);
+    return () => { current = false; window.clearInterval(heartbeat); };
+  }, [active, watch.watchId, watch.phase]);
+
+  useEffect(() => {
+    if (!active || !waiting || !watch.watchId) return;
+    const controller = new AbortController();
+    let current = true;
+    void (async () => {
+      try {
+        const result = await apiRequest<BalanceWatchResult>(`/api/income-plan/coinmate-balance-watch/${watch.watchId}`, { signal: controller.signal });
+        if (!result.changed) throw new Error("Sledování připsání CZK vypršelo.");
+        if (current) setWatch((value) => ({ ...value, phase: "confirmed", error: "" }));
+      } catch (error) {
+        if (current) setWatch({ watchId: "", phase: "error", error: error instanceof Error ? error.message : "Připsání CZK se nepodařilo ověřit." });
+      }
+    })();
+    return () => { current = false; controller.abort(); };
+  }, [active, waiting, watch.watchId]);
 
   const visibleWatch = !active
     ? { watchId: "", phase: "idle", error: "" } as WatchState
@@ -211,7 +238,8 @@ function useCoinmateBalanceWatch(active: boolean, waiting: boolean) {
   return {
     watch: visibleWatch,
     retry: () => {
-      setWatch({ watchId: "dev-simulation", phase: "ready", error: "" });
+      setWatch({ watchId: "", phase: "starting", error: "" });
+      setAttempt((value) => value + 1);
     },
   };
 }
@@ -282,16 +310,8 @@ function IncomePlanContent({ initial, canManage, processing }: { initial: Overvi
   });
   const btcPurchase = useMutation({
     mutationFn: async ({ amountCzk }: { amountCzk: number }) => {
-      await coinmateDevDelay();
-      const market = await apiRequest<BtcPrice>("/api/market-data/btc-price");
-      if (!Number.isFinite(market.priceCzk) || market.priceCzk <= 0) throw new Error("Aktuální cena BTC není dostupná.");
-      const simulatedBtc = Math.round(amountCzk / market.priceCzk * 100_000_000) / 100_000_000;
-      if (simulatedBtc <= 0) throw new Error("Částka je příliš nízká pro nákup BTC.");
-      let trade: CoinmatePurchaseResult = { success: true, btcBought: simulatedBtc, status: "filled", pending: false };
-
-      /* Production Coinmate purchase, enable together with the real balance watcher:
       const csrf = await antiforgeryToken();
-      trade = await apiRequest<CoinmatePurchaseResult>("/api/income-plan/coinmate-bitcoin-purchase", {
+      let trade = await apiRequest<CoinmatePurchaseResult>("/api/income-plan/coinmate-bitcoin-purchase", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrf, "Idempotency-Key": coinmateLedgerKey.current },
         body: JSON.stringify({ amountCzk: amountCzk.toFixed(2) }),
@@ -301,7 +321,6 @@ function IncomePlanContent({ initial, canManage, processing }: { initial: Overvi
         trade = await apiRequest<CoinmatePurchaseResult>(`/api/income-plan/coinmate-bitcoin-purchase/${coinmateLedgerKey.current}`);
       }
       if (!trade.success || trade.btcBought <= 0) throw new Error(`Coinmate nákup skončil stavem ${trade.status}.`);
-      */
 
       const bitcoin = await apiRequest<BitcoinPurchaseOverview>("/api/bitcoin/overview");
       const coinmateAccount = bitcoin.accounts.find((account) => account.canManage && account.name.trim().toLocaleLowerCase("cs-CZ") === "coinmate");

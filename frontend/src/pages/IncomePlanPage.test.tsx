@@ -65,11 +65,14 @@ describe('IncomePlanPage', () => {
     expect(within(debtRow).getAllByText(/5[  ]000[  ]Kč/).length).toBeGreaterThan(0)
   })
 
-  it('simulates the Coinmate wait and records the calculated purchase in the Coinmate BTC account', async () => {
+  it('waits for Coinmate, buys BTC, and records the calculated purchase in the Coinmate account', async () => {
     vi.mocked(fetch).mockImplementation(async (input, options) => {
       const url = String(input)
       if (url.endsWith('/income-plan/overview')) return { ok: true, status: 200, json: async () => ({ settings: { defaultCapitalCzk: 10000, withoutDebtBtcPercent: 85, withoutDebtCashPercent: 15, withDebtBtcPercent: 40, withDebtDebtPercent: 50, withDebtCashPercent: 10, deferredDebtPaymentCzk: 0, ...paymentSettings }, debts: [] }) } as Response
       if (url.endsWith('/identity/antiforgery')) return { ok: true, status: 200, json: async () => ({ token: 'csrf' }) } as Response
+      if (url.endsWith('/income-plan/coinmate-balance-watch') && options?.method === 'POST') return { ok: true, status: 200, json: async () => ({ watchId: 'watch-1', currency: 'czk', initialBalance: 100, expiresInSeconds: 30 }) } as Response
+      if (url.endsWith('/income-plan/coinmate-balance-watch/watch-1') && options?.method === undefined) return { ok: true, status: 200, json: async () => ({ changed: true, currency: 'czk', balance: 8600 }) } as Response
+      if (url.endsWith('/income-plan/coinmate-bitcoin-purchase') && options?.method === 'POST') return { ok: true, status: 200, json: async () => ({ success: true, btcBought: 0.00425, status: 'filled', pending: false }) } as Response
       if (url.endsWith('/btc-price')) return { ok: true, status: 200, json: async () => ({ priceUsd: 75000, priceCzk: 2000000, change24hPercent: 1 }) } as Response
       if (url.endsWith('/bitcoin/overview')) return { ok: true, status: 200, json: async () => ({ accounts: [{ id: 'coinmate-account', name: 'Coinmate', canManage: true }] }) } as Response
       if (url.endsWith('/bitcoin/purchases') && options?.method === 'POST') return { ok: true, status: 201, json: async () => ({}) } as Response
@@ -89,6 +92,7 @@ describe('IncomePlanPage', () => {
     expect(within(btcRow).queryByRole('button', { name: /platební údaje/i })).not.toBeInTheDocument()
     const sent = within(btcRow).getByRole('button', { name: 'Odesláno' })
     await waitFor(() => expect(sent).toBeEnabled())
+    expect(vi.mocked(fetch).mock.calls.some(([url, request]) => String(url).endsWith('/income-plan/coinmate-balance-watch') && request?.method === 'POST')).toBe(true)
     await user.click(sent)
     expect(document.querySelector('.income-debt-workflow')).not.toBeInTheDocument()
     const cashRow = screen.getByText('Cash').closest('.income-flow-row') as HTMLElement
@@ -114,6 +118,9 @@ describe('IncomePlanPage', () => {
       const url = String(input)
       if (url.endsWith('/income-plan/overview')) return { ok: true, status: 200, json: async () => ({ settings: { defaultCapitalCzk: 1000, withoutDebtBtcPercent: 85, withoutDebtCashPercent: 15, withDebtBtcPercent: 40, withDebtDebtPercent: 50, withDebtCashPercent: 10, deferredDebtPaymentCzk: 200, ...paymentSettings }, debts: [{ id: 'small', name: 'První dluh', priority: 5, balanceCzk: 100 }, { id: 'large', name: 'Druhý dluh', priority: 5, balanceCzk: 1000 }] }) } as Response
       if (url.endsWith('/identity/antiforgery')) return { ok: true, status: 200, json: async () => ({ token: 'csrf' }) } as Response
+      if (url.endsWith('/income-plan/coinmate-balance-watch') && options?.method === 'POST') return { ok: true, status: 200, json: async () => ({ watchId: 'watch-debts', currency: 'czk', initialBalance: 100, expiresInSeconds: 30 }) } as Response
+      if (url.endsWith('/income-plan/coinmate-balance-watch/watch-debts') && options?.method === undefined) return { ok: true, status: 200, json: async () => ({ changed: true, currency: 'czk', balance: 500 }) } as Response
+      if (url.endsWith('/income-plan/coinmate-bitcoin-purchase') && options?.method === 'POST') return { ok: true, status: 200, json: async () => ({ success: true, btcBought: 0.0002, status: 'filled', pending: false }) } as Response
       if (url.endsWith('/btc-price')) return { ok: true, status: 200, json: async () => ({ priceCzk: 2000000 }) } as Response
       if (url.endsWith('/bitcoin/overview')) return { ok: true, status: 200, json: async () => ({ accounts: [{ id: 'coinmate-account', name: 'Coinmate', canManage: true }] }) } as Response
       if (url.endsWith('/bitcoin/purchases') && options?.method === 'POST') return { ok: true, status: 201, json: async () => ({}) } as Response
@@ -153,6 +160,9 @@ describe('IncomePlanPage', () => {
       const url = String(input)
       if (url.endsWith('/income-plan/overview')) return { ok: true, status: 200, json: async () => ({ settings: { defaultCapitalCzk: 1000, withoutDebtBtcPercent: 85, withoutDebtCashPercent: 15, withDebtBtcPercent: 40, withDebtDebtPercent: 50, withDebtCashPercent: 10, deferredDebtPaymentCzk: 0, ...paymentSettings }, debts: [{ id: 'loan', name: 'Jediný dluh', priority: 5, balanceCzk: 1000 }] }) } as Response
       if (url.endsWith('/identity/antiforgery')) return { ok: true, status: 200, json: async () => ({ token: 'csrf' }) } as Response
+      if (url.endsWith('/income-plan/coinmate-balance-watch') && options?.method === 'POST') return { ok: true, status: 200, json: async () => ({ watchId: 'watch-final-debt', currency: 'czk', initialBalance: 100, expiresInSeconds: 30 }) } as Response
+      if (url.endsWith('/income-plan/coinmate-balance-watch/watch-final-debt') && options?.method === undefined) return { ok: true, status: 200, json: async () => ({ changed: true, currency: 'czk', balance: 500 }) } as Response
+      if (url.endsWith('/income-plan/coinmate-bitcoin-purchase') && options?.method === 'POST') return { ok: true, status: 200, json: async () => ({ success: true, btcBought: 0.0002, status: 'filled', pending: false }) } as Response
       if (url.endsWith('/btc-price')) return { ok: true, status: 200, json: async () => ({ priceCzk: 2000000 }) } as Response
       if (url.endsWith('/bitcoin/overview')) return { ok: true, status: 200, json: async () => ({ accounts: [{ id: 'coinmate-account', name: 'Coinmate', canManage: true }] }) } as Response
       if (url.endsWith('/bitcoin/purchases') && options?.method === 'POST') return { ok: true, status: 201, json: async () => ({}) } as Response
@@ -173,11 +183,14 @@ describe('IncomePlanPage', () => {
     expect(await screen.findByText('BTC nakoupeno a zapsáno')).toBeInTheDocument()
   })
 
-  it('keeps debt processing available when the simulated BTC ledger write fails', async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
+  it('keeps debt processing available when the BTC ledger write fails', async () => {
+    vi.mocked(fetch).mockImplementation(async (input, options) => {
       const url = String(input)
       if (url.endsWith('/income-plan/overview')) return { ok: true, status: 200, json: async () => ({ settings: { defaultCapitalCzk: 1000, withoutDebtBtcPercent: 85, withoutDebtCashPercent: 15, withDebtBtcPercent: 40, withDebtDebtPercent: 50, withDebtCashPercent: 10, deferredDebtPaymentCzk: 0, ...paymentSettings }, debts: [{ id: 'loan', name: 'Nezávislý dluh', priority: 5, balanceCzk: 1000 }] }) } as Response
       if (url.endsWith('/identity/antiforgery')) return { ok: true, status: 200, json: async () => ({ token: 'csrf' }) } as Response
+      if (url.endsWith('/income-plan/coinmate-balance-watch') && options?.method === 'POST') return { ok: true, status: 200, json: async () => ({ watchId: 'watch-error', currency: 'czk', initialBalance: 100, expiresInSeconds: 30 }) } as Response
+      if (url.endsWith('/income-plan/coinmate-balance-watch/watch-error') && options?.method === undefined) return { ok: true, status: 200, json: async () => ({ changed: true, currency: 'czk', balance: 500 }) } as Response
+      if (url.endsWith('/income-plan/coinmate-bitcoin-purchase') && options?.method === 'POST') return { ok: true, status: 200, json: async () => ({ success: true, btcBought: 0.0002, status: 'filled', pending: false }) } as Response
       if (url.endsWith('/btc-price')) return { ok: true, status: 200, json: async () => ({ priceCzk: 2000000 }) } as Response
       if (url.endsWith('/bitcoin/overview')) return { ok: true, status: 200, json: async () => ({ accounts: [] }) } as Response
       return { ok: true, status: 200, json: async () => ({ id: 'samuel', isDefault: false, displayName: 'Samuel' }) } as Response
