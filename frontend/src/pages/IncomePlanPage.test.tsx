@@ -93,6 +93,8 @@ describe('IncomePlanPage', () => {
     const sent = within(btcRow).getByRole('button', { name: 'Odesláno' })
     await waitFor(() => expect(sent).toBeEnabled())
     expect(vi.mocked(fetch).mock.calls.some(([url, request]) => String(url).endsWith('/income-plan/coinmate-balance-watch') && request?.method === 'POST')).toBe(true)
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url, request]) => String(url).endsWith('/income-plan/coinmate-balance-watch/watch-1') && request?.method === undefined)).toBe(true))
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/income-plan/coinmate-bitcoin-purchase'))).toBe(false)
     await user.click(sent)
     expect(document.querySelector('.income-debt-workflow')).not.toBeInTheDocument()
     const cashRow = screen.getByText('Cash').closest('.income-flow-row') as HTMLElement
@@ -114,9 +116,14 @@ describe('IncomePlanPage', () => {
   })
 
   it('opens debt processing in parallel, advances one debt at a time, and defers only remaining fresh allocation', async () => {
+    let deferredUpdated = false
+    let overviewRefetchedAfterDefer = false
     vi.mocked(fetch).mockImplementation(async (input, options) => {
       const url = String(input)
-      if (url.endsWith('/income-plan/overview')) return { ok: true, status: 200, json: async () => ({ settings: { defaultCapitalCzk: 1000, withoutDebtBtcPercent: 85, withoutDebtCashPercent: 15, withDebtBtcPercent: 40, withDebtDebtPercent: 50, withDebtCashPercent: 10, deferredDebtPaymentCzk: 200, ...paymentSettings }, debts: [{ id: 'small', name: 'První dluh', priority: 5, balanceCzk: 100 }, { id: 'large', name: 'Druhý dluh', priority: 5, balanceCzk: 1000 }] }) } as Response
+      if (url.endsWith('/income-plan/overview')) {
+        if (deferredUpdated) overviewRefetchedAfterDefer = true
+        return { ok: true, status: 200, json: async () => ({ settings: { defaultCapitalCzk: 1000, withoutDebtBtcPercent: 85, withoutDebtCashPercent: 15, withDebtBtcPercent: 40, withDebtDebtPercent: 50, withDebtCashPercent: 10, deferredDebtPaymentCzk: deferredUpdated ? 500 : 200, ...paymentSettings }, debts: [{ id: 'small', name: 'První dluh', priority: 5, balanceCzk: 100 }, { id: 'large', name: 'Druhý dluh', priority: 5, balanceCzk: 1000 }] }) } as Response
+      }
       if (url.endsWith('/identity/antiforgery')) return { ok: true, status: 200, json: async () => ({ token: 'csrf' }) } as Response
       if (url.endsWith('/income-plan/coinmate-balance-watch') && options?.method === 'POST') return { ok: true, status: 200, json: async () => ({ watchId: 'watch-debts', currency: 'czk', initialBalance: 100, expiresInSeconds: 30 }) } as Response
       if (url.endsWith('/income-plan/coinmate-balance-watch/watch-debts') && options?.method === undefined) return { ok: true, status: 200, json: async () => ({ changed: true, currency: 'czk', balance: 500 }) } as Response
@@ -124,7 +131,11 @@ describe('IncomePlanPage', () => {
       if (url.endsWith('/btc-price')) return { ok: true, status: 200, json: async () => ({ priceCzk: 2000000 }) } as Response
       if (url.endsWith('/bitcoin/overview')) return { ok: true, status: 200, json: async () => ({ accounts: [{ id: 'coinmate-account', name: 'Coinmate', canManage: true }] }) } as Response
       if (url.endsWith('/bitcoin/purchases') && options?.method === 'POST') return { ok: true, status: 201, json: async () => ({}) } as Response
-      if (url.includes('/payments') || url.endsWith('/deferred-debt-payment/consume') || url.endsWith('/deferred-debt-payment')) return { ok: true, status: 200, json: async () => ({}) } as Response
+      if (url.endsWith('/deferred-debt-payment') && options?.method === 'POST') {
+        deferredUpdated = true
+        return { ok: true, status: 200, json: async () => ({}) } as Response
+      }
+      if (url.includes('/payments') || url.endsWith('/deferred-debt-payment/consume')) return { ok: true, status: 200, json: async () => ({}) } as Response
       return { ok: true, status: 200, json: async () => ({ id: 'samuel', isDefault: false, displayName: 'Samuel' }) } as Response
     })
     const user = userEvent.setup()
@@ -150,7 +161,10 @@ describe('IncomePlanPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Odložit zbývající splátky' }))
     await waitFor(() => expect(document.querySelector('.income-debt-workflow')).not.toBeInTheDocument())
-    expect(screen.getByText('Cash').closest('.income-flow-row')).toHaveAttribute('data-expanded', 'true')
+    const cashRow = screen.getByText('Cash').closest('.income-flow-row') as HTMLElement
+    expect(cashRow).toHaveAttribute('data-expanded', 'true')
+    await waitFor(() => expect(overviewRefetchedAfterDefer).toBe(true))
+    expect(await within(cashRow).findByRole('img', { name: /Cash QR pro převod 80[  ]Kč/ })).toBeInTheDocument()
     const deferCall = vi.mocked(fetch).mock.calls.find(([url, options]) => String(url).endsWith('/deferred-debt-payment') && options?.method === 'POST')
     expect(JSON.parse(String(deferCall?.[1]?.body))).toEqual({ amountCzk: '300.00', expectedDeferredDebtPaymentCzk: '200.00' })
   })

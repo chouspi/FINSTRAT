@@ -199,22 +199,19 @@ function useCoinmateBalanceWatch(active: boolean, waiting: boolean) {
 
   useEffect(() => {
     if (!active || !watch.watchId || watch.phase === "confirmed" || watch.phase === "error") return;
-    let current = true;
     const heartbeat = window.setInterval(() => {
       void (async () => {
         try {
           const token = await antiforgeryToken();
           await apiRequest(`/api/income-plan/coinmate-balance-watch/${watch.watchId}/ping`, { method: "POST", headers: { "X-CSRF-TOKEN": token } });
-        } catch (error) {
-          if (current) setWatch({ watchId: "", phase: "error", error: error instanceof Error ? error.message : "Sledování zůstatku bylo přerušeno." });
-        }
+        } catch { /* The waiting request owns the terminal watcher result. */ }
       })();
-    }, 15_000);
-    return () => { current = false; window.clearInterval(heartbeat); };
+    }, 10_000);
+    return () => window.clearInterval(heartbeat);
   }, [active, watch.watchId, watch.phase]);
 
   useEffect(() => {
-    if (!active || !waiting || !watch.watchId) return;
+    if (!active || !watch.watchId) return;
     const controller = new AbortController();
     let current = true;
     void (async () => {
@@ -227,7 +224,7 @@ function useCoinmateBalanceWatch(active: boolean, waiting: boolean) {
       }
     })();
     return () => { current = false; controller.abort(); };
-  }, [active, waiting, watch.watchId]);
+  }, [active, watch.watchId]);
 
   const visibleWatch = !active
     ? { watchId: "", phase: "idle", error: "" } as WatchState
@@ -249,6 +246,7 @@ function IncomePlanContent({ initial, canManage, processing }: { initial: Overvi
   const [btcStep, setBtcStep] = useState<"idle" | "qr" | "closing" | "waiting">(processing ? "qr" : "idle");
   const [btcSent, setBtcSent] = useState(false);
   const [btcAmountToProcess, setBtcAmountToProcess] = useState(0);
+  const [cashAmountToProcess, setCashAmountToProcess] = useState<number | null>(null);
   const [debtStep, setDebtStep] = useState<"idle" | "active" | "complete">("idle");
   const [debtIndex, setDebtIndex] = useState(0);
   const [debtPayments, setDebtPayments] = useState<DebtPaymentPlan[]>([]);
@@ -277,7 +275,7 @@ function IncomePlanContent({ initial, canManage, processing }: { initial: Overvi
     ...(vwceAmount > .005 ? [{ key: "vwce", label: "VWCE místo BTC", note: `zbývá v poolu ${czk.format(initial.deferredVwceCzk ?? 0)}`, percent: validAmount && amount > 0 ? vwceAmount / amount * 100 : 0, amount: vwceAmount, icon: Landmark, tone: "blue" }] : []),
     ...(directBtcAmount > .005 || vwceAmount <= .005 ? [{ key: "btc", label: "Bitcoin", note: "dlouhodobý kapitál", percent: validAmount && amount > 0 ? Math.round(directBtcAmount / amount * 1000) / 10 : percentages.btc, amount: directBtcAmount, icon: Bitcoin, tone: "copper" }] : []),
     ...(hasDebts ? [{ key: "debt", label: "Dluhy", note: deferredApplied > 0 ? `předčasné splátky · včetně ${czk.format(deferredApplied)} odložených` : "předčasné splátky", percent: validAmount && amount > 0 ? Math.round((debtBudget + scheduledApplied) / amount * 1000) / 10 : percentages.debt, amount: debtBudget + scheduledApplied, icon: Landmark, tone: "red" }] : []),
-    { key: "cash", label: "Cash", note: "likvidní rezerva", percent: validAmount && amount > 0 ? Math.round(allocation.cashAmount / amount * 1000) / 10 : percentages.cash, amount: allocation.cashAmount, icon: Wallet, tone: "green" },
+    { key: "cash", label: "Cash", note: "likvidní rezerva", percent: validAmount && amount > 0 ? Math.round((cashAmountToProcess ?? allocation.cashAmount) / amount * 1000) / 10 : percentages.cash, amount: cashAmountToProcess ?? allocation.cashAmount, icon: Wallet, tone: "green" },
   ];
   const allocations = allocateDebtBudget(initial.debts, debtBudget);
   const freshAllocations = allocateDebtBudget(initial.debts, Math.max(0, debtBudget - deferredApplied));
@@ -418,6 +416,7 @@ function IncomePlanContent({ initial, canManage, processing }: { initial: Overvi
   const debtPending = recordDebtPayment.isPending || deferRemainingDebts.isPending;
   const startAfterBtcSent = () => {
     setBtcAmountToProcess(directBtcAmount);
+    setCashAmountToProcess(allocation.cashAmount);
     setBtcSent(true);
     setBtcStep("closing");
     if (candidateDebtPayments.length > 0) {
@@ -477,7 +476,7 @@ function IncomePlanContent({ initial, canManage, processing }: { initial: Overvi
       <div className="income-distribution" style={{ "--income-compact-row-height": `${compactRowHeight}px` } as CSSProperties} aria-label="Rozdělení příjmu">
         <span className="income-vault-feed" aria-hidden="true" />
         {rows.map((row, index) => {
-          const btcHasVisibleStatus = btcStatusPhase !== "idle" && btcStatusPhase !== "ready";
+          const btcHasVisibleStatus = btcSent && btcStatusPhase !== "idle" && btcStatusPhase !== "ready";
           const expanded = ((btcStep === "qr" || btcStep === "closing" || btcHasVisibleStatus) && row.key === "btc") || (debtStep === "active" && row.key === "debt") || (cashStep === "active" && row.key === "cash");
           return <div className={`income-distribution-row${index === 0 ? " first" : ""}${index === rows.length - 1 ? " last" : ""}${expanded ? " income-distribution-row--expanded" : ""}`} key={row.key}>
             <div className="income-vault-branch income-vault-branches" aria-hidden="true"><b>{row.percent} %</b></div>
@@ -486,7 +485,7 @@ function IncomePlanContent({ initial, canManage, processing }: { initial: Overvi
               <div className="income-envelope-copy"><strong>{row.label}</strong>{row.key === "debt" && scheduledDebtPayment > 0 ? <div className="income-debt-split"><span><em>Pravidelné splátky</em><b>{validAmount ? czk.format(scheduledApplied) : "—"}</b></span><span><em>Předčasné splátky</em><b>{validAmount ? czk.format(debtBudget) : "—"}</b></span></div> : <span>{row.note}</span>}</div>
               <div className="income-envelope-value"><output>{validAmount ? czk.format(row.amount) : "—"}</output><b>{row.percent} %</b></div>
               {row.key === "btc" && (btcStep === "qr" || btcStep === "closing") && <CoinmatePaymentQr amountCzk={row.amount} settings={settings} closing={btcStep === "closing"} watchStarting={balanceWatch.watch.phase === "starting"} onSent={startAfterBtcSent} onClosed={() => setBtcStep("waiting")} />}
-              {row.key === "btc" && processing && directBtcAmount > .005 && btcStatusPhase !== "idle" && btcStatusPhase !== "ready" && <div className={`income-btc-watch income-btc-watch--${btcStatusPhase}`} role="status">
+              {row.key === "btc" && processing && btcSent && directBtcAmount > .005 && btcStatusPhase !== "idle" && btcStatusPhase !== "ready" && <div className={`income-btc-watch income-btc-watch--${btcStatusPhase}`} role="status">
                 <span>{btcStatusText}</span>
                 {balanceWatch.watch.phase === "error" && <button type="button" onClick={balanceWatch.retry}>Zkusit znovu</button>}
                 {btcPurchase.isError && <button type="button" onClick={() => btcPurchase.mutate({ amountCzk: btcAmountToProcess })}>Zkusit znovu</button>}
