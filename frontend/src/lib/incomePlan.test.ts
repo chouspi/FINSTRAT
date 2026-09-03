@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allocateDebtBudget, calculateIncomeAllocation, createCashPaymentPayload, formatCzkInput, parseCzkInput, redirectBtcToDeferredVwce } from './incomePlan'
+import { allocateDebtBudget, calculateIncomeAllocation, createCashPaymentPayload, createCoinmatePaymentPayload, formatCzkInput, parseCzkInput, redirectBtcToDeferredVwce } from './incomePlan'
 
 describe('allocateDebtBudget', () => {
   it('redistributes a capped debt share to remaining eligible debts', () => {
@@ -39,6 +39,32 @@ describe('calculateIncomeAllocation', () => {
     expect(result.cashAmount).toBe(2000)
     expect(result.btcAmount + result.debtBudget + result.cashAmount + result.scheduledApplied).toBe(15000)
   })
+
+  it('caps debt allocation at the real balance and redistributes excess by the debt-free profile', () => {
+    const result = calculateIncomeAllocation(10000, 0, 0, 60, 25, 15, true, {
+      eligibleDebtBalanceCzk: 500,
+      withoutDebtBtcPercent: 80,
+      withoutDebtCashPercent: 20,
+    })
+
+    expect(result.debtBudget).toBe(500)
+    expect(result.freshDebtBudget).toBe(500)
+    expect(result.btcAmount).toBe(7600)
+    expect(result.cashAmount).toBe(1900)
+    expect(result.btcAmount + result.debtBudget + result.cashAmount).toBe(10000)
+  })
+
+  it('subtracts reserved payments from the remaining real debt capacity', () => {
+    const result = calculateIncomeAllocation(10000, 500, 0, 60, 25, 15, true, {
+      eligibleDebtBalanceCzk: 1000,
+      withoutDebtBtcPercent: 80,
+      withoutDebtCashPercent: 20,
+    })
+
+    expect(result.scheduledApplied).toBe(500)
+    expect(result.debtBudget).toBe(500)
+    expect(result.btcAmount + result.cashAmount + result.debtBudget + result.scheduledApplied).toBe(10000)
+  })
 })
 
 describe('CZK input formatting', () => {
@@ -49,9 +75,16 @@ describe('CZK input formatting', () => {
   })
 })
 
+describe('Coinmate QR payment', () => {
+  it('creates an SPD 1.0 payload with all Coinmate payment descriptors', () => {
+    expect(createCoinmatePaymentPayload(1234.5, 'CZ65 0800 0000 1920 0014 5399', '123456', 'Coinmate deposit')).toBe('SPD*1.0*ACC:CZ6508000000192000145399*AM:1234.50*CC:CZK*X-VS:123456*MSG:Coinmate deposit*')
+    expect(() => createCoinmatePaymentPayload(100, '  ', '123456', 'Coinmate deposit')).toThrow('IBAN')
+  })
+})
+
 describe('Cash QR payment', () => {
-  it('matches the supplied Czech payment descriptors and changes only the amount', () => {
-    expect(createCashPaymentPayload(100, '2026-08-24')).toBe('SPD*1.0*ACC:CZ0506000000000264886458*AM:100.0*CC:CZK*DT:20260824*')
-    expect(createCashPaymentPayload(2000, '2026-08-24')).toBe('SPD*1.0*ACC:CZ0506000000000264886458*AM:2000.0*CC:CZK*DT:20260824*')
+  it('creates an SPD 1.0 payload for the configured Cash account', () => {
+    expect(createCashPaymentPayload(1500.5, 'CZ65 0800 0000 1920 0014 5399')).toBe('SPD*1.0*ACC:CZ6508000000192000145399*AM:1500.50*CC:CZK*MSG:Cash rezerva*')
+    expect(() => createCashPaymentPayload(100, '  ')).toThrow('IBAN')
   })
 })

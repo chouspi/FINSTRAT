@@ -13,7 +13,11 @@ public sealed record IncomePlanSettingsResponse(
     decimal WithDebtBtcPercent,
     decimal WithDebtDebtPercent,
     decimal WithDebtCashPercent,
-    decimal DeferredDebtPaymentCzk);
+    decimal DeferredDebtPaymentCzk,
+    string? CashAccountIban,
+    string? CoinmateIban,
+    string? CoinmateVariableSymbol,
+    string? CoinmateRecipientMessage);
 
 public sealed record IncomePlanDebtResponse(
     Guid Id, string Name, short Priority, decimal BalanceCzk);
@@ -24,7 +28,11 @@ public sealed record UpdateIncomePlanSettingsRequest(
     decimal WithoutDebtCashPercent,
     decimal WithDebtBtcPercent,
     decimal WithDebtDebtPercent,
-    decimal WithDebtCashPercent);
+    decimal WithDebtCashPercent,
+    string? CashAccountIban,
+    string? CoinmateIban,
+    string? CoinmateVariableSymbol,
+    string? CoinmateRecipientMessage);
 
 public sealed record AdjustDeferredDebtPaymentRequest(
     string AmountCzk,

@@ -24,11 +24,16 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Database: Host=postgres;Port=5432;Database=${POSTGRES_DB:-finstrat};Username=${POSTGRES_USER:-finstrat};Password=${POSTGRES_PASSWORD}
+      CoinmateController__BaseUrl: ${COINMATE_CONTROLLER_URL:-http://coinmate-controller:8080/}
+      CoinmateController__ApiToken: ${CONTROLLER_API_TOKEN:-}
     volumes:
       - data_protection_keys:/home/app/.aspnet/DataProtection-Keys
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - default
+      - coinmate-controller
 
   web:
     build:
@@ -43,3 +48,7 @@ services:
 volumes:
   postgres_data:
   data_protection_keys:
+
+networks:
+  coinmate-controller:
+    external: true

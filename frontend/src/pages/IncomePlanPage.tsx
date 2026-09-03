@@ -1,30 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useSearch } from "@tanstack/react-router";
 import QRCode from "qrcode";
 import {
   Banknote,
   Bitcoin,
-  ArrowRight,
-  CheckCircle2,
+  Check,
   CircleDollarSign,
   Landmark,
   Trash2,
   Wallet,
-  X,
 } from "lucide-react";
 import { antiforgeryToken, apiRequest } from "../lib/api";
+import { todayIsoDate } from "../lib/date";
 import {
   allocateDebtBudget,
   calculateIncomeAllocation,
   createCashPaymentPayload,
+  createCoinmatePaymentPayload,
   formatCzkInput,
   parseCzkInput,
   redirectBtcToDeferredVwce,
 } from "../lib/incomePlan";
-import { dateToIsoTimestamp, todayIsoDate } from "../lib/date";
 import { createUuid } from "../lib/uuid";
-import { notifyDataChanged } from "../lib/dataRefresh";
 import "./IncomePlanPage.css";
 
 type Settings = {
@@ -35,31 +34,29 @@ type Settings = {
   withDebtDebtPercent: number;
   withDebtCashPercent: number;
   deferredDebtPaymentCzk: number;
+  cashAccountIban: string | null;
+  coinmateIban: string | null;
+  coinmateVariableSymbol: string | null;
+  coinmateRecipientMessage: string | null;
 };
-type PlanDebt = {
-  id: string;
-  name: string;
-  priority: number;
-  balanceCzk: number;
-};
+type PlanDebt = { id: string; name: string; priority: number; balanceCzk: number };
 type Overview = { settings: Settings; debts: PlanDebt[]; scheduledDebtPaymentCzk?: number; deferredVwceCzk?: number };
 type CurrentUser = { isDefault: boolean };
-type BitcoinAccount = { id: string; name: string; canManage: boolean };
-type BitcoinOverview = { accounts: BitcoinAccount[] };
+type WatchState = { watchId: string; phase: "idle" | "starting" | "ready" | "waiting" | "confirmed" | "error"; error: string };
+type DebtPaymentPlan = { debt: PlanDebt; amount: number; freshAmount: number; deferredAmount: number };
+type CoinmatePurchaseResult = { success: boolean; btcBought: number; status: string; pending: boolean };
+type BitcoinPurchaseOverview = { accounts: { id: string; name: string; canManage: boolean }[] };
 type BtcPrice = { priceCzk: number };
-type VwceAccount = { id: string; name: string; isOwnedByCurrentUser: boolean };
-type VwceOverview = { accounts: VwceAccount[] };
-type VwcePrice = { priceCzk: number };
 
 const czk = new Intl.NumberFormat("cs-CZ", {
   style: "currency",
   currency: "CZK",
   maximumFractionDigits: 0,
 });
-const apiDecimal = (value: string) => value.replace(/\s/g, "").replace(",", ".");
+const coinmateDevDelayMs = import.meta.env.MODE === "test" ? 1 : 2_000;
+const coinmateDevDelay = () => new Promise<void>((resolve) => window.setTimeout(resolve, coinmateDevDelayMs));
 
 export function IncomePlanPage() {
-  const navigate = useNavigate();
   const { dialog } = useSearch({ from: "/income-plan" });
   const overview = useQuery({
     queryKey: ["income-plan", "overview"],
@@ -71,710 +68,445 @@ export function IncomePlanPage() {
     queryFn: () => apiRequest<CurrentUser>("/api/identity/me"),
     retry: false,
   });
-  if (overview.isPending)
-    return (
-      <section className="income-page">
-        <div className="income-loading" />
-      </section>
-    );
-  if (overview.isError)
-    return (
-      <section className="income-page income-state">
-        <CircleDollarSign size={28} />
-        <h2>Income plan se nepodařilo načíst</h2>
-        <button type="button" onClick={() => overview.refetch()}>
-          Zkusit znovu
-        </button>
-      </section>
-    );
-  return (
-    <>
-      <IncomePlanContent initial={overview.data} canManage={identity.data?.isDefault === false} />
-      {dialog === "process" && identity.data?.isDefault === false && (
-        <ProcessIncomeDialog
-          initial={overview.data}
-          onClose={() =>
-            void navigate({
-              to: "/income-plan",
-              search: { dialog: undefined },
-              replace: true,
-            })
-          }
-        />
-      )}
-    </>
-  );
+  if (overview.isPending) return <section className="income-page"><div className="income-loading" /></section>;
+  if (overview.isError) return <section className="income-page income-state"><CircleDollarSign size={28} /><h2>Income plan se nepodařilo načíst</h2><button type="button" onClick={() => overview.refetch()}>Zkusit znovu</button></section>;
+  const canManage = identity.data?.isDefault === false;
+  const processing = dialog === "process" && canManage;
+  return <IncomePlanContent key={processing ? "processing" : "idle"} initial={overview.data} canManage={canManage} processing={processing} />;
 }
 
-function ProcessIncomeDialog({
-  initial,
-  onClose,
-}: {
-  initial: Overview;
-  onClose: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const [capital, setCapital] = useState(
-    formatCzkInput(String(initial.settings.defaultCapitalCzk || "")),
-  );
-  const [showPurchase, setShowPurchase] = useState(false);
-  const [showVwcePurchase, setShowVwcePurchase] = useState(false);
-  const [btcSaved, setBtcSaved] = useState<number | null>(null);
-  const [vwceSaved, setVwceSaved] = useState<number | null>(null);
-  const [debtsDone, setDebtsDone] = useState(false);
-  const [debtsDeferred, setDebtsDeferred] = useState(false);
-  const [deferredBalance] = useState(() => initial.settings.deferredDebtPaymentCzk ?? 0);
-  const paymentKeys = useRef(
-    new Map(initial.debts.map((debt) => [debt.id, createUuid()])),
-  );
-  const accounts = useQuery({
-    queryKey: ["bitcoin", "overview"],
-    queryFn: () => apiRequest<BitcoinOverview>("/api/bitcoin/overview"),
-    retry: false,
-  });
-  const price = useQuery({
-    queryKey: ["market-data", "btc-price"],
-    queryFn: () => apiRequest<BtcPrice>("/api/market-data/btc-price"),
-    retry: false,
-  });
-  const vwceAccounts = useQuery({ queryKey: ["vwce", "overview"], queryFn: () => apiRequest<VwceOverview>("/api/vwce/overview"), retry: false });
-  const vwcePrice = useQuery({ queryKey: ["market-data", "vwce-price"], queryFn: () => apiRequest<VwcePrice>("/api/market-data/vwce-price"), retry: false });
-  const amount = parseCzkInput(capital);
-  const validAmount = Number.isFinite(amount) && amount > 0;
-  const hasDebts = initial.debts.length > 0;
-  const btcPercent = hasDebts
-    ? initial.settings.withDebtBtcPercent
-    : initial.settings.withoutDebtBtcPercent;
-  const debtPercent = hasDebts ? initial.settings.withDebtDebtPercent : 0;
-  const cashPercent = hasDebts
-    ? initial.settings.withDebtCashPercent
-    : initial.settings.withoutDebtCashPercent;
-  const allocation = calculateIncomeAllocation(
-    validAmount ? amount : 0,
-    initial.scheduledDebtPaymentCzk ?? 0,
-    deferredBalance,
-    btcPercent,
-    debtPercent,
-    cashPercent,
-    hasDebts,
-  );
-  const { scheduledApplied, deferredApplied, distributableCapital, freshDebtBudget, debtBudget, cashAmount } = allocation;
-  const vwceAmount = Math.min(allocation.btcAmount, initial.deferredVwceCzk ?? 0);
-  const btcAmount = Math.max(0, allocation.btcAmount - vwceAmount);
-  const debtAllocations = allocateDebtBudget(initial.debts, debtBudget);
-  const freshDebtAllocations = allocateDebtBudget(initial.debts, freshDebtBudget);
-  const deferAmount = [...freshDebtAllocations.values()].reduce((sum, value) => sum + value, 0);
-  const canDeferPayment = deferredApplied > 0.005 || deferAmount > 0.005;
-  const manageableAccounts =
-    accounts.data?.accounts.filter((account) => account.canManage) ?? [];
-  const ownedVwceAccounts = Array.isArray(vwceAccounts.data?.accounts) ? vwceAccounts.data.accounts.filter((account) => account.isOwnedByCurrentUser) : [];
-  const debtPayments = initial.debts
-    .map((debt) => ({
-      debt,
-      amount: Math.min(
-        debt.balanceCzk,
-        Math.round((debtAllocations.get(debt.id) ?? 0) * 100) / 100,
-      ),
-    }))
-    .filter((item) => item.amount > 0);
-  const paidTotal = debtPayments.reduce((sum, payment) => sum + payment.amount, 0);
-  const deferredToConsume = Math.min(deferredApplied, paidTotal);
-  const adjustDeferred = async (path: string, adjustedAmount: number) => {
-    const token = await antiforgeryToken();
-    return apiRequest<{ deferredDebtPaymentCzk: number }>(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token },
-      body: JSON.stringify({ amountCzk: adjustedAmount.toFixed(2), expectedDeferredDebtPaymentCzk: deferredBalance.toFixed(2) }),
-    });
-  };
-  const payments = useMutation({
-    mutationFn: async () => {
-      const token = await antiforgeryToken();
-      for (const payment of debtPayments) {
-        await apiRequest(`/api/debts/${payment.debt.id}/payments`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRF-TOKEN": token,
-            "Idempotency-Key": paymentKeys.current.get(payment.debt.id)!,
-          },
-          body: JSON.stringify({
-            amountCzk: payment.amount.toFixed(2),
-            effectiveAt: todayIsoDate(),
-            note: "Income plán",
-          }),
-        });
-      }
-      if (deferredToConsume > 0.005)
-        await adjustDeferred("/api/income-plan/deferred-debt-payment/consume", deferredToConsume);
-    },
-    onSuccess: async () => {
-      setDebtsDone(true);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["debts"] }),
-        queryClient.invalidateQueries({ queryKey: ["income-plan"] }),
-      ]);
-      notifyDataChanged();
-    },
-  });
-  const deferPayment = useMutation({
-    mutationFn: async () => deferAmount > 0.005
-      ? adjustDeferred("/api/income-plan/deferred-debt-payment", deferAmount)
-      : null,
-    onSuccess: async () => {
-      setDebtsDeferred(true);
-      await queryClient.invalidateQueries({ queryKey: ["income-plan"] });
-    },
-  });
-  const debtActionDone = debtsDone || debtsDeferred;
-  return (
-    <>
-      <div
-        className="dialog-backdrop process-income-backdrop"
-        role="presentation"
-        onMouseDown={(event) =>
-          event.target === event.currentTarget && onClose()
-        }
-      >
-        <section
-          className="process-income-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Zpracovat příjem"
-        >
-          <header>
-            <div className="process-income-header-main">
-              <label className="process-capital">
-                Částka příjmu (Kč)
-                <input
-                  autoFocus
-                  inputMode="decimal"
-                  value={capital}
-                  onChange={(event) => setCapital(formatCzkInput(event.target.value))}
-                />
-              </label>
-              <ArrowRight className="process-income-arrow" size={32} strokeWidth={1.8} aria-hidden="true" />
-              {validAmount && (
-                <div className="process-summary">
-                   {vwceAmount > .01 && <div className="vwce"><span>VWCE místo BTC</span><strong>{czk.format(vwceAmount)}</strong></div>}
-                   <div className="btc"><span>BTC{scheduledApplied <= 0 && vwceAmount <= .01 ? ` · ${btcPercent} %` : ''}</span><strong>{czk.format(btcAmount)}</strong></div>
-                  {debtPercent > 0 && <div className="debt"><span>Dluhy{scheduledApplied <= 0 ? ` · ${debtPercent} % + odloženo` : ''}</span><strong>{czk.format(debtBudget)}</strong></div>}
-                  <div className="cash"><span>Cash{scheduledApplied <= 0 ? ` · ${cashPercent} %` : ''}</span><strong>{czk.format(cashAmount)}</strong></div>
-                </div>
-              )}
-            </div>
-            <button
-              type="button"
-              aria-label="Zavřít zpracování příjmu"
-              onClick={onClose}
-            >
-              <X size={17} />
-            </button>
-          </header>
-          <div className="process-income-layout">
-          <div className="process-income-content">
-            {scheduledApplied > 0.01 && (
-              <p className="process-deferred-note">
-                Na účtu zůstane {czk.format(scheduledApplied)} na budoucí splátky.
-                Zbývajících {czk.format(amount - scheduledApplied)} se rozdělí; běžná složka splátek je o rezervu snížena.
-              </p>
-            )}
-            {validAmount && (initial.scheduledDebtPaymentCzk ?? 0) > amount && (
-              <p className="process-deferred-note">
-                Budoucí splátky {czk.format(initial.scheduledDebtPaymentCzk ?? 0)} převyšují příjem, proto se tentokrát ignorují.
-              </p>
-            )}
-            {deferredApplied > 0.01 && (
-              <p className="process-deferred-note">
-                Nejdřív jde {czk.format(deferredApplied)} na dříve odložené splátky.
-                Zbývajících {czk.format(distributableCapital)} se dělí procenty.
-              </p>
-            )}
-            {vwceAmount > 0.01 && <section className={`process-step${vwceSaved !== null ? " done" : ""}`}><div className="process-step-icon vwce">{vwceSaved !== null ? <CheckCircle2 size={16} /> : <Landmark size={16} />}</div><div className="process-step-body"><strong>Nákup VWCE místo BTC</strong><span>{vwceSaved !== null ? `Pool snížen o ${czk.format(vwceSaved)}` : ownedVwceAccounts.length === 0 ? "Nejdřív vytvořte vlastní VWCE účet" : `Kup za ${czk.format(vwceAmount)}; potvrzením se o tuto částku sníží pool`}</span></div>{vwceSaved === null && <button className="process-action" type="button" disabled={!validAmount || ownedVwceAccounts.length === 0} onClick={() => setShowVwcePurchase(true)}>Zapsat nákup</button>}</section>}
-            {btcAmount > 0.01 && (
-              <section
-                className={`process-step${btcSaved !== null ? " done" : ""}`}
-              >
-                <div className="process-step-icon">
-                  {btcSaved !== null ? (
-                    <CheckCircle2 size={16} />
-                  ) : (
-                    <Bitcoin size={16} />
-                  )}
-                </div>
-                <div className="process-step-body">
-                  <strong>Nákup BTC</strong>
-                  <span>
-                    {btcSaved !== null
-                      ? `Zapsáno ${btcSaved.toFixed(8)} BTC`
-                      : manageableAccounts.length === 0
-                        ? "Nejdřív vytvořte BTC účet na stránce BTC Účty"
-                        : validAmount
-                          ? `Kup za ${czk.format(btcAmount)} a zapiš nákup`
-                          : "Zadej částku příjmu"}
-                  </span>
-                </div>
-                {btcSaved === null && (
-                  <button
-                    className="process-action"
-                    type="button"
-                    disabled={!validAmount || manageableAccounts.length === 0}
-                    onClick={() => setShowPurchase(true)}
-                  >
-                    Zapsat nákup
-                  </button>
-                )}
-              </section>
-            )}
-            {debtPayments.length > 0 && (
-              <section className={`process-step${debtActionDone ? " done" : ""}`}>
-                <div className="process-step-icon debt">
-                  <>
-                    {debtActionDone ? (
-                      <CheckCircle2 size={16} />
-                    ) : (
-                      <Banknote size={16} />
-                    )}
-                  </>
-                </div>
-                <div className="process-step-body debt-copy">
-                  <strong>Splátky dluhů</strong>
-                  {debtsDeferred ? <span>{deferAmount > 0.005 ? `${czk.format(deferAmount)} bylo přičteno; celkem odloženo ${czk.format(deferredBalance + deferAmount)}` : `Odložená splátka ${czk.format(deferredBalance)} zůstává odložená`}</span> : debtPayments.map((payment) => (
-                    <span className="process-debt" key={payment.debt.id}>
-                      {payment.debt.name}
-                      <b>{czk.format(payment.amount)}</b>
-                    </span>
-                  ))}
-                </div>
-                {!debtActionDone && (
-                  <div className="process-debt-actions">
-                    <button className="process-action" type="button" disabled={payments.isPending || deferPayment.isPending} onClick={() => payments.mutate()}>
-                      {payments.isPending ? "Platím…" : `Zaplatit vše (${czk.format(paidTotal)})`}
-                    </button>
-                    <button className="process-action defer" type="button" disabled={!canDeferPayment || payments.isPending || deferPayment.isPending} onClick={() => deferPayment.mutate()}>
-                      {deferPayment.isPending ? "Odkládám…" : `${deferredApplied > 0.005 ? "Odložit znovu" : "Odložit splátku"} (${czk.format(paidTotal)})`}
-                    </button>
-                  </div>
-                )}
-              </section>
-            )}
-            {(payments.error || deferPayment.error) && (
-              <p className="form-error" role="alert">
-                {payments.error?.message ?? deferPayment.error?.message}
-              </p>
-            )}
-            <footer>
-              <button className="process-close" type="button" onClick={onClose}>
-                Zavřít
-              </button>
-              <button type="button" disabled={!validAmount} onClick={onClose}>
-                Dokončit
-              </button>
-            </footer>
-          </div>
-          <CashPaymentQrPanel amountCzk={cashAmount} />
-          </div>
-        </section>
-      </div>
-      {showPurchase && (
-        <IncomePurchaseDialog
-          accounts={manageableAccounts}
-          totalCzk={btcAmount}
-          currentPriceCzk={price.data?.priceCzk}
-          onClose={() => setShowPurchase(false)}
-          onSaved={(quantity) => {
-            setBtcSaved(quantity);
-            setShowPurchase(false);
-          }}
-        />
-      )}
-      {showVwcePurchase && <IncomeVwcePurchaseDialog accounts={ownedVwceAccounts} totalCzk={vwceAmount} currentPriceCzk={vwcePrice.data?.priceCzk} onClose={() => setShowVwcePurchase(false)} onSaved={(consumed) => { setVwceSaved(consumed); setShowVwcePurchase(false) }} />}
-    </>
-  );
-}
+function CoinmatePaymentQr({ amountCzk, settings, closing, watchStarting, onSent, onClosed }: { amountCzk: number; settings: Settings; closing: boolean; watchStarting: boolean; onSent: () => void; onClosed: () => void }) {
+  const shellRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [qr, setQr] = useState({ payload: "", url: "" });
+  const [qrError, setQrError] = useState("");
+  let payload = "";
+  let payloadError = "";
+  if (settings.coinmateIban && settings.coinmateVariableSymbol && settings.coinmateRecipientMessage && amountCzk > 0.005) {
+    try {
+      payload = createCoinmatePaymentPayload(amountCzk, settings.coinmateIban, settings.coinmateVariableSymbol, settings.coinmateRecipientMessage);
+    } catch (error) {
+      payloadError = error instanceof Error ? error.message : "Coinmate QR nelze vytvořit.";
+    }
+  }
 
-function CashPaymentQrPanel({ amountCzk }: { amountCzk: number }) {
-  const [qr, setQr] = useState({ payload: '', url: '' })
-  const payload = amountCzk > 0.005 ? createCashPaymentPayload(amountCzk, todayIsoDate()) : ''
   useEffect(() => {
-    let active = true
-    if (!payload) return () => { active = false }
-    void QRCode.toString(payload, { type: 'svg', width: 260, margin: 1, errorCorrectionLevel: 'M' }).then((svg) => {
-      if (active) setQr({ payload, url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` })
-    })
-    return () => { active = false }
-  }, [payload])
-  const qrUrl = qr.payload === payload ? qr.url : ''
-  return <aside className="process-cash-qr" aria-label="QR platba do Cash rezervy"><strong className="process-cash-qr-title">Převod do Monety</strong>{qrUrl ? <img src={qrUrl} alt={`QR platba ${czk.format(amountCzk)}`} /> : <div className="cash-payment-loading" />}</aside>
-}
-
-function IncomeVwcePurchaseDialog({ accounts, totalCzk, currentPriceCzk, onClose, onSaved }: { accounts: VwceAccount[]; totalCzk: number; currentPriceCzk?: number; onClose: () => void; onSaved: (consumedCzk: number) => void }) {
-  const queryClient = useQueryClient()
-  const key = useRef(createUuid())
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
-  const [unitPriceCzk, setUnitPriceCzk] = useState(currentPriceCzk?.toFixed(2) ?? '')
-  const [shares, setShares] = useState(currentPriceCzk && currentPriceCzk > 0 ? (totalCzk / currentPriceCzk).toFixed(8) : '')
-  const price = Number(unitPriceCzk)
-  const quantity = Number(shares)
-  const actual = price * quantity
-  const save = useMutation({ mutationFn: async () => { if (!(price > 0) || !(quantity > 0)) throw new Error('Zadejte platný počet podílů a cenu.'); const token = await antiforgeryToken(); return apiRequest<{ deferredVwceConsumedCzk: number }>(`/api/vwce/accounts/${accountId}/purchases`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token, 'Idempotency-Key': key.current }, body: JSON.stringify({ shares, unitPriceCzk: price.toFixed(2), acquiredAt: dateToIsoTimestamp(todayIsoDate()), note: 'Income plán · VWCE místo BTC', consumeDeferredVwce: true, deferredVwceAmountCzk: totalCzk.toFixed(2) }) }) }, onSuccess: async (result) => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['vwce'] }), queryClient.invalidateQueries({ queryKey: ['taxes'] }), queryClient.invalidateQueries({ queryKey: ['strategy'] }), queryClient.invalidateQueries({ queryKey: ['income-plan'] })]); notifyDataChanged(); onSaved(result.deferredVwceConsumedCzk) } })
-  return <div className="dialog-backdrop income-purchase-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="income-purchase-dialog" role="dialog" aria-modal="true" aria-labelledby="income-vwce-purchase-title"><header><strong id="income-vwce-purchase-title">Koupit VWCE místo BTC</strong><button type="button" aria-label="Zavřít nákup VWCE" onClick={onClose}><X size={17} /></button></header><form onSubmit={(event) => { event.preventDefault(); save.mutate() }}><label>Broker účet<select value={accountId} onChange={(event) => setAccountId(event.target.value)}>{accounts.map((account) => <option value={account.id} key={account.id}>{account.name}</option>)}</select></label><label>Počet podílů<input autoFocus inputMode="decimal" value={shares} onChange={(event) => setShares(event.target.value)} /></label><label>Cena za podíl (Kč)<input inputMode="decimal" value={unitPriceCzk} onChange={(event) => setUnitPriceCzk(event.target.value)} /></label><div className="income-purchase-total"><span>Evidovaná hodnota nákupu</span><strong>{Number.isFinite(actual) && actual > 0 ? czk.format(actual) : '—'}</strong></div><small>Potvrzením nákupu se Income pool sníží o plánovaných {czk.format(totalCzk)} bez ohledu na evidovanou hodnotu lotu.</small>{save.error && <p className="form-error" role="alert">{save.error.message}</p>}<footer><button type="button" onClick={onClose}>Zrušit</button><button className="primary" type="submit" disabled={save.isPending || !accountId || !(price > 0) || !(quantity > 0)}>Koupit VWCE</button></footer></form></section></div>
-}
-
-function IncomePurchaseDialog({
-  accounts,
-  totalCzk,
-  currentPriceCzk,
-  onClose,
-  onSaved,
-}: {
-  accounts: BitcoinAccount[];
-  totalCzk: number;
-  currentPriceCzk?: number;
-  onClose: () => void;
-  onSaved: (quantity: number) => void;
-}) {
-  const queryClient = useQueryClient();
-  const key = useRef(createUuid());
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
-  const [quantityBtc, setQuantityBtc] = useState("");
-  const [unitPriceCzk, setUnitPriceCzk] = useState("");
-  const quantity = parseCzkInput(quantityBtc);
-  const unitPrice = parseCzkInput(unitPriceCzk);
-  const save = useMutation({
-    mutationFn: async () => {
-      if (!(quantity > 0) || !(unitPrice > 0))
-        throw new Error("Zadejte platné množství a cenu.");
-      const token = await antiforgeryToken();
-      return apiRequest("/api/bitcoin/purchases", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRF-TOKEN": token,
-          "Idempotency-Key": key.current,
-        },
-        body: JSON.stringify({
-          accountId,
-          quantityBtc: apiDecimal(quantityBtc),
-          unitPriceCzk: unitPrice.toFixed(2),
-          acquiredAt: dateToIsoTimestamp(todayIsoDate()),
-          txid: null,
-          note: "Income plán",
-        }),
+    let active = true;
+    if (!payload) return () => { active = false; };
+    void QRCode.toString(payload, { type: "svg", width: 260, margin: 1, errorCorrectionLevel: "M" })
+      .then((svg) => {
+        if (active) setQr({ payload, url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` });
+      })
+      .catch(() => {
+        if (active) setQrError("Coinmate QR se nepodařilo vytvořit.");
       });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["bitcoin"] });
-      notifyDataChanged();
-      onSaved(quantity);
-    },
-  });
-  const useCurrentPrice = () => {
-    if (!currentPriceCzk) return;
-    setUnitPriceCzk(currentPriceCzk.toFixed(2));
-    setQuantityBtc((totalCzk / currentPriceCzk).toFixed(8));
-  };
-  return (
-    <div
-      className="dialog-backdrop income-purchase-backdrop"
-      role="presentation"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
-      <section
-        className="income-purchase-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="income-purchase-title"
-      >
-        <header>
-          <strong id="income-purchase-title">Přidat nákup</strong>
-          <button type="button" aria-label="Zavřít nákup" onClick={onClose}>
-            <X size={17} />
-          </button>
-        </header>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            save.mutate();
-          }}
-        >
-          <label>
-            Účet
-            <select
-              value={accountId}
-              onChange={(event) => setAccountId(event.target.value)}
-            >
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Množství BTC
-            <input
-              autoFocus
-              inputMode="decimal"
-              value={quantityBtc}
-              onChange={(event) => setQuantityBtc(event.target.value)}
-            />
-          </label>
-          <label>
-            Cena za BTC (Kč)
-            <div className="process-price">
-              <input
-                inputMode="decimal"
-                value={unitPriceCzk}
-                onChange={(event) => setUnitPriceCzk(event.target.value)}
-              />
-              {currentPriceCzk && (
-                <button type="button" onClick={useCurrentPrice}>
-                  Aktuální
-                </button>
-              )}
-            </div>
-          </label>
-          <div className="income-purchase-total">
-            <span>Celkem</span>
-            <strong>{czk.format(totalCzk)}</strong>
-          </div>
-          {save.error && (
-            <p className="form-error" role="alert">
-              {save.error.message}
-            </p>
-          )}
-          <footer>
-            <button type="button" onClick={onClose}>
-              Zrušit
-            </button>
-            <button
-              className="primary"
-              type="submit"
-              disabled={
-                save.isPending ||
-                !accountId ||
-                !(quantity > 0) ||
-                !(unitPrice > 0)
-              }
-            >
-              Přidat nákup
-            </button>
-          </footer>
-        </form>
-      </section>
+    return () => { active = false; };
+  }, [payload]);
+
+  useEffect(() => {
+    if (!closing) return;
+    const fallback = window.setTimeout(onClosed, 560);
+    return () => window.clearTimeout(fallback);
+  }, [closing, onClosed]);
+
+  useLayoutEffect(() => {
+    const shell = shellRef.current;
+    const content = contentRef.current;
+    if (!shell || !content) return;
+    const contentHeight = content.scrollHeight;
+    shell.style.height = closing ? `${contentHeight}px` : "0px";
+    shell.style.opacity = closing ? "1" : "0";
+    void shell.offsetHeight;
+    const frame = window.requestAnimationFrame(() => {
+      shell.style.height = closing ? "0px" : `${contentHeight}px`;
+      shell.style.opacity = closing ? "0" : "1";
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [closing]);
+
+  const qrUrl = qr.payload === payload ? qr.url : "";
+  return <div ref={shellRef} className={`income-btc-processing-shell${closing ? " closing" : ""}`} onTransitionEnd={(event) => { if (closing && event.target === event.currentTarget && event.propertyName === "height") onClosed(); }}>
+    <div ref={contentRef} className="income-btc-processing-clip">
+      <div className="income-btc-processing">
+        <div className="income-coinmate-copy"><strong>Vklad na Coinmate</strong></div>
+        <div className="income-coinmate-qr">
+          {qrUrl ? <img src={qrUrl} alt={`Coinmate QR pro vklad ${czk.format(amountCzk)}`} /> : <div className="income-coinmate-qr-state" role="status">{payloadError || qrError || "Coinmate QR není dostupné. Zkontrolujte platební údaje v Nastavení."}</div>}
+          <button className="income-coinmate-sent" type="button" disabled={closing || watchStarting} onClick={onSent}><Check size={14} />{watchStarting ? "Připravuji sledování…" : "Odesláno"}</button>
+        </div>
+      </div>
     </div>
-  );
+  </div>;
 }
 
-function IncomePlanContent({ initial, canManage }: { initial: Overview; canManage: boolean }) {
+function CashPaymentQr({ amountCzk, iban, onComplete }: { amountCzk: number; iban: string | null; onComplete: () => void }) {
+  const [qr, setQr] = useState({ payload: "", url: "" });
+  const [qrError, setQrError] = useState("");
+  let payload = "";
+  let payloadError = "";
+  if (iban && amountCzk > .005) {
+    try {
+      payload = createCashPaymentPayload(amountCzk, iban);
+    } catch (error) {
+      payloadError = error instanceof Error ? error.message : "Cash QR nelze vytvořit.";
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+    if (!payload) return () => { active = false; };
+    void QRCode.toString(payload, { type: "svg", width: 260, margin: 1, errorCorrectionLevel: "M" })
+      .then((svg) => {
+        if (active) setQr({ payload, url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` });
+      })
+      .catch(() => {
+        if (active) setQrError("Cash QR se nepodařilo vytvořit.");
+      });
+    return () => { active = false; };
+  }, [payload]);
+
+  const qrUrl = qr.payload === payload ? qr.url : "";
+  return <div className="income-cash-processing">
+    <strong>Převod do Cash rezervy</strong>
+    <div className="income-cash-qr">
+      {qrUrl ? <img src={qrUrl} alt={`Cash QR pro převod ${czk.format(amountCzk)}`} /> : <div className="income-cash-qr-state" role="status">{payloadError || qrError || "Cash QR není dostupné. Zkontrolujte IBAN v Nastavení."}</div>}
+      <button type="button" onClick={onComplete}><Check size={14} />Dokončit</button>
+    </div>
+  </div>;
+}
+
+function useCoinmateBalanceWatch(active: boolean, waiting: boolean) {
+  const [watch, setWatch] = useState<WatchState>({ watchId: "dev-simulation", phase: "ready", error: "" });
+
+  /* Production Coinmate watcher, enable when the controller is reachable from this environment:
+  const token = await antiforgeryToken();
+  const created = await apiRequest<BalanceWatch>("/api/income-plan/coinmate-balance-watch", {
+    method: "POST", headers: { "X-CSRF-TOKEN": token },
+  });
+  const heartbeat = window.setInterval(async () => {
+    const csrf = await antiforgeryToken();
+    await apiRequest(`/api/income-plan/coinmate-balance-watch/${created.watchId}/ping`, {
+      method: "POST", headers: { "X-CSRF-TOKEN": csrf },
+    });
+  }, 15_000);
+  const result = await apiRequest<BalanceWatchResult>(`/api/income-plan/coinmate-balance-watch/${created.watchId}`);
+  window.clearInterval(heartbeat);
+  if (result.changed) setWatch({ watchId: created.watchId, phase: "confirmed", error: "" });
+  */
+
+  useEffect(() => {
+    if (!active || !waiting || !watch.watchId || watch.phase === "confirmed") return;
+    let current = true;
+    const timer = window.setTimeout(() => {
+      if (current) setWatch((value) => ({ ...value, phase: "confirmed", error: "" }));
+    }, coinmateDevDelayMs);
+    return () => { current = false; window.clearTimeout(timer); };
+  }, [active, waiting, watch.watchId, watch.phase]);
+
+  const visibleWatch = !active
+    ? { watchId: "", phase: "idle", error: "" } as WatchState
+    : waiting && watch.phase === "ready"
+      ? { ...watch, phase: "waiting" as const }
+      : watch;
+
+  return {
+    watch: visibleWatch,
+    retry: () => {
+      setWatch({ watchId: "dev-simulation", phase: "ready", error: "" });
+    },
+  };
+}
+
+function IncomePlanContent({ initial, canManage, processing }: { initial: Overview; canManage: boolean; processing: boolean }) {
   const queryClient = useQueryClient();
-  const [capital, setCapital] = useState(
-    formatCzkInput(String(initial.settings.defaultCapitalCzk || "")),
-  );
+  const [btcStep, setBtcStep] = useState<"idle" | "qr" | "closing" | "waiting">(processing ? "qr" : "idle");
+  const [btcSent, setBtcSent] = useState(false);
+  const [btcAmountToProcess, setBtcAmountToProcess] = useState(0);
+  const [debtStep, setDebtStep] = useState<"idle" | "active" | "complete">("idle");
+  const [debtIndex, setDebtIndex] = useState(0);
+  const [debtPayments, setDebtPayments] = useState<DebtPaymentPlan[]>([]);
+  const [processedDebtIds, setProcessedDebtIds] = useState<string[]>([]);
+  const [cashStep, setCashStep] = useState<"idle" | "active" | "complete">("idle");
+  const [localDeferredBalance, setLocalDeferredBalance] = useState(initial.settings.deferredDebtPaymentCzk ?? 0);
+  const [capital, setCapital] = useState(formatCzkInput(String(initial.settings.defaultCapitalCzk || "")));
   const settings = initial.settings;
   const hasDebts = initial.debts.length > 0;
   const amount = parseCzkInput(capital);
   const validAmount = Number.isFinite(amount) && amount >= 0;
   const percentages = hasDebts
-    ? {
-        btc: settings.withDebtBtcPercent,
-        debt: settings.withDebtDebtPercent,
-        cash: settings.withDebtCashPercent,
-      }
-    : {
-        btc: settings.withoutDebtBtcPercent,
-        debt: 0,
-        cash: settings.withoutDebtCashPercent,
-      };
+    ? { btc: settings.withDebtBtcPercent, debt: settings.withDebtDebtPercent, cash: settings.withDebtCashPercent }
+    : { btc: settings.withoutDebtBtcPercent, debt: 0, cash: settings.withoutDebtCashPercent };
   const deferredBalance = settings.deferredDebtPaymentCzk ?? 0;
   const scheduledDebtPayment = initial.scheduledDebtPaymentCzk ?? 0;
-  const allocation = calculateIncomeAllocation(
-    validAmount ? amount : 0,
-    scheduledDebtPayment,
-    deferredBalance,
-    percentages.btc,
-    percentages.debt,
-    percentages.cash,
-    hasDebts,
-  );
+  const eligibleDebtBalance = initial.debts.filter((debt) => debt.priority > 0).reduce((sum, debt) => sum + debt.balanceCzk, 0);
+  const allocation = calculateIncomeAllocation(validAmount ? amount : 0, scheduledDebtPayment, deferredBalance, percentages.btc, percentages.debt, percentages.cash, hasDebts, {
+    eligibleDebtBalanceCzk: eligibleDebtBalance,
+    withoutDebtBtcPercent: settings.withoutDebtBtcPercent,
+    withoutDebtCashPercent: settings.withoutDebtCashPercent,
+  });
   const { scheduledApplied, deferredApplied, debtBudget } = allocation;
-  const { btcAmount: directBtcAmount, vwceAmount } = redirectBtcToDeferredVwce(allocation.btcAmount, initial.deferredVwceCzk ?? 0)
+  const { btcAmount: directBtcAmount, vwceAmount } = redirectBtcToDeferredVwce(allocation.btcAmount, initial.deferredVwceCzk ?? 0);
   const rows = [
     ...(vwceAmount > .005 ? [{ key: "vwce", label: "VWCE místo BTC", note: `zbývá v poolu ${czk.format(initial.deferredVwceCzk ?? 0)}`, percent: validAmount && amount > 0 ? vwceAmount / amount * 100 : 0, amount: vwceAmount, icon: Landmark, tone: "blue" }] : []),
-    ...(directBtcAmount > .005 || vwceAmount <= .005 ? [{
-      key: "btc",
-      label: "Bitcoin",
-      note: "dlouhodobý kapitál",
-      percent: vwceAmount > .005 && validAmount && amount > 0 ? directBtcAmount / amount * 100 : percentages.btc,
-      amount: directBtcAmount,
-      icon: Bitcoin,
-      tone: "copper",
-    }] : []),
-    ...(hasDebts
-      ? [
-          {
-            key: "debt",
-            label: "Dluhy",
-            note: deferredApplied > 0 ? `předčasné splátky · včetně ${czk.format(deferredApplied)} odložených` : "předčasné splátky",
-            percent: percentages.debt,
-            amount: debtBudget + scheduledApplied,
-            icon: Landmark,
-            tone: "red",
-          },
-        ]
-      : []),
-    {
-      key: "cash",
-      label: "Cash",
-      note: "likvidní rezerva",
-      percent: percentages.cash,
-      amount: allocation.cashAmount,
-      icon: Wallet,
-      tone: "green",
-    },
+    ...(directBtcAmount > .005 || vwceAmount <= .005 ? [{ key: "btc", label: "Bitcoin", note: "dlouhodobý kapitál", percent: validAmount && amount > 0 ? Math.round(directBtcAmount / amount * 1000) / 10 : percentages.btc, amount: directBtcAmount, icon: Bitcoin, tone: "copper" }] : []),
+    ...(hasDebts ? [{ key: "debt", label: "Dluhy", note: deferredApplied > 0 ? `předčasné splátky · včetně ${czk.format(deferredApplied)} odložených` : "předčasné splátky", percent: validAmount && amount > 0 ? Math.round((debtBudget + scheduledApplied) / amount * 1000) / 10 : percentages.debt, amount: debtBudget + scheduledApplied, icon: Landmark, tone: "red" }] : []),
+    { key: "cash", label: "Cash", note: "likvidní rezerva", percent: validAmount && amount > 0 ? Math.round(allocation.cashAmount / amount * 1000) / 10 : percentages.cash, amount: allocation.cashAmount, icon: Wallet, tone: "green" },
   ];
   const allocations = allocateDebtBudget(initial.debts, debtBudget);
-  const allocatedDebt = [...allocations.values()].reduce(
-    (sum, value) => sum + value,
-    0,
-  );
+  const freshAllocations = allocateDebtBudget(initial.debts, Math.max(0, debtBudget - deferredApplied));
+  const candidateDebtPayments = initial.debts
+    .map((debt) => {
+      const paymentAmount = allocations.get(debt.id) ?? 0;
+      const freshAmount = freshAllocations.get(debt.id) ?? 0;
+      return { debt, amount: paymentAmount, freshAmount, deferredAmount: Math.max(0, paymentAmount - freshAmount) };
+    })
+    .filter((payment) => payment.amount > .005);
+  const eligibleDebtCount = initial.debts.filter((debt) => debt.priority > 0).length;
+  const allocatedDebt = [...allocations.values()].reduce((sum, value) => sum + value, 0);
+  const balanceWatch = useCoinmateBalanceWatch(processing && directBtcAmount > .005, btcSent);
+  const paymentKeys = useRef(new Map<string, string>());
+  const coinmateLedgerKey = useRef(createUuid());
+  const btcPurchaseStarted = useRef(false);
   const saveCapital = useMutation({
     mutationFn: async () => {
       const token = await antiforgeryToken();
-      return apiRequest<Settings>("/api/income-plan/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token },
-        body: JSON.stringify({
-          ...settings,
-          defaultCapitalCzk: String(amount),
-        }),
-      });
+      return apiRequest<Settings>("/api/income-plan/settings", { method: "PUT", headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token }, body: JSON.stringify({ ...settings, defaultCapitalCzk: String(amount) }) });
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["income-plan"] });
-    },
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["income-plan"] }); },
   });
   const deleteDeferred = useMutation({
     mutationFn: async () => {
       const token = await antiforgeryToken();
-      return apiRequest(`/api/income-plan/deferred-debt-payment?expectedDeferredDebtPaymentCzk=${encodeURIComponent(deferredBalance.toFixed(2))}`, {
-        method: "DELETE",
-        headers: { "X-CSRF-TOKEN": token },
+      return apiRequest(`/api/income-plan/deferred-debt-payment?expectedDeferredDebtPaymentCzk=${encodeURIComponent(deferredBalance.toFixed(2))}`, { method: "DELETE", headers: { "X-CSRF-TOKEN": token } });
+    },
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["income-plan"] }); },
+  });
+  const btcPurchase = useMutation({
+    mutationFn: async ({ amountCzk }: { amountCzk: number }) => {
+      await coinmateDevDelay();
+      const market = await apiRequest<BtcPrice>("/api/market-data/btc-price");
+      if (!Number.isFinite(market.priceCzk) || market.priceCzk <= 0) throw new Error("Aktuální cena BTC není dostupná.");
+      const simulatedBtc = Math.round(amountCzk / market.priceCzk * 100_000_000) / 100_000_000;
+      if (simulatedBtc <= 0) throw new Error("Částka je příliš nízká pro nákup BTC.");
+      let trade: CoinmatePurchaseResult = { success: true, btcBought: simulatedBtc, status: "filled", pending: false };
+
+      /* Production Coinmate purchase, enable together with the real balance watcher:
+      const csrf = await antiforgeryToken();
+      trade = await apiRequest<CoinmatePurchaseResult>("/api/income-plan/coinmate-bitcoin-purchase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrf, "Idempotency-Key": coinmateLedgerKey.current },
+        body: JSON.stringify({ amountCzk: amountCzk.toFixed(2) }),
       });
+      while (trade.pending) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+        trade = await apiRequest<CoinmatePurchaseResult>(`/api/income-plan/coinmate-bitcoin-purchase/${coinmateLedgerKey.current}`);
+      }
+      if (!trade.success || trade.btcBought <= 0) throw new Error(`Coinmate nákup skončil stavem ${trade.status}.`);
+      */
+
+      const bitcoin = await apiRequest<BitcoinPurchaseOverview>("/api/bitcoin/overview");
+      const coinmateAccount = bitcoin.accounts.find((account) => account.canManage && account.name.trim().toLocaleLowerCase("cs-CZ") === "coinmate");
+      if (!coinmateAccount) throw new Error("BTC účet Coinmate nebyl nalezen.");
+      const unitPriceCzk = amountCzk / trade.btcBought;
+      const token = await antiforgeryToken();
+      await apiRequest("/api/bitcoin/purchases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token, "Idempotency-Key": coinmateLedgerKey.current },
+        body: JSON.stringify({
+          accountId: coinmateAccount.id,
+          quantityBtc: trade.btcBought.toFixed(8),
+          unitPriceCzk: unitPriceCzk.toFixed(2),
+          acquiredAt: new Date().toISOString(),
+          txid: null,
+          note: "Automatický nákup z Income plánu",
+        }),
+      });
+      return { ...trade, unitPriceCzk };
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["income-plan"] });
+      await queryClient.invalidateQueries({ queryKey: ["bitcoin"] });
     },
   });
+  const startBtcPurchase = btcPurchase.mutate;
+  const recordDebtPayment = useMutation({
+    mutationFn: async ({ debtId, amountCzk, deferredAmount, expectedDeferred }: { debtId: string; amountCzk: number; deferredAmount: number; expectedDeferred: number }) => {
+      const token = await antiforgeryToken();
+      let key = paymentKeys.current.get(debtId);
+      if (!key) {
+        key = createUuid();
+        paymentKeys.current.set(debtId, key);
+      }
+      await apiRequest(`/api/debts/${debtId}/payments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token, "Idempotency-Key": key },
+        body: JSON.stringify({ amountCzk: amountCzk.toFixed(2), effectiveAt: todayIsoDate(), note: "Income plán · předčasná splátka" }),
+      });
+      const deferredToConsume = Math.min(expectedDeferred, deferredAmount);
+      if (deferredToConsume > .005) {
+        await apiRequest("/api/income-plan/deferred-debt-payment/consume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token },
+          body: JSON.stringify({ amountCzk: deferredToConsume.toFixed(2), expectedDeferredDebtPaymentCzk: expectedDeferred.toFixed(2) }),
+        });
+      }
+      return { deferredConsumed: deferredToConsume, expectedDeferred };
+    },
+    onSuccess: async ({ deferredConsumed, expectedDeferred }, { debtId }) => {
+      const nextDeferred = Math.max(0, expectedDeferred - deferredConsumed);
+      const nextProcessedDebtIds = [...processedDebtIds, debtId];
+      setLocalDeferredBalance(nextDeferred);
+      setProcessedDebtIds(nextProcessedDebtIds);
+      const remainingIndices = debtPayments
+        .map((payment, index) => nextProcessedDebtIds.includes(payment.debt.id) ? -1 : index)
+        .filter((index) => index >= 0);
+      if (remainingIndices.length === 0) {
+        setDebtStep("complete");
+        setCashStep("active");
+      } else {
+        setDebtIndex(remainingIndices.find((index) => index > debtIndex) ?? remainingIndices[0]);
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["debts"] }),
+        queryClient.invalidateQueries({ queryKey: ["income-plan"] }),
+      ]);
+    },
+  });
+  const deferRemainingDebts = useMutation({
+    mutationFn: async ({ amountCzk, expectedDeferred }: { amountCzk: number; expectedDeferred: number }) => {
+      const token = await antiforgeryToken();
+      await apiRequest("/api/income-plan/deferred-debt-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token },
+        body: JSON.stringify({ amountCzk: amountCzk.toFixed(2), expectedDeferredDebtPaymentCzk: expectedDeferred.toFixed(2) }),
+      });
+      return expectedDeferred + amountCzk;
+    },
+    onSuccess: async (nextDeferred) => {
+      setLocalDeferredBalance(nextDeferred);
+      setDebtIndex(debtPayments.length);
+      setDebtStep("complete");
+      setCashStep("active");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["debts"] }),
+        queryClient.invalidateQueries({ queryKey: ["income-plan"] }),
+      ]);
+    },
+  });
+  const compactRowHeight = Math.max(96, (330 - (rows.length - 1) * 10) / rows.length);
+  const currentDebtPayment = debtPayments[debtIndex];
+  const remainingFreshDebtAmount = debtPayments
+    .filter((payment) => !processedDebtIds.includes(payment.debt.id))
+    .reduce((sum, payment) => sum + payment.freshAmount, 0);
+  const debtPending = recordDebtPayment.isPending || deferRemainingDebts.isPending;
+  const startAfterBtcSent = () => {
+    setBtcAmountToProcess(directBtcAmount);
+    setBtcSent(true);
+    setBtcStep("closing");
+    if (candidateDebtPayments.length > 0) {
+      setDebtPayments(candidateDebtPayments);
+      setProcessedDebtIds([]);
+      setDebtIndex(0);
+      setDebtStep("active");
+    } else {
+      setDebtStep("complete");
+      setCashStep("active");
+    }
+  };
+  const deferRemaining = () => {
+    if (debtPending) return;
+    if (remainingFreshDebtAmount <= .005) {
+      setDebtIndex(debtPayments.length);
+      setDebtStep("complete");
+      setCashStep("active");
+      return;
+    }
+    deferRemainingDebts.mutate({ amountCzk: remainingFreshDebtAmount, expectedDeferred: localDeferredBalance });
+  };
 
-  return (
-    <section className="income-page">
-      <div className="income-hero">
-        <div className="income-capital">
-          <p>VOLNÝ KAPITÁL</p>
-          <label>
-            <input
-              aria-label="Volný kapitál"
-              inputMode="decimal"
-              value={capital}
-              placeholder="0"
-              onChange={(event) =>
-                setCapital(formatCzkInput(event.target.value))
-              }
-              onBlur={() => validAmount && saveCapital.mutate()}
-            />
-            <span>Kč</span>
-          </label>
-          {deferredBalance > 0.01 && (
-            <div className="income-deferred-balance"><span>Odložené splátky</span><strong>{czk.format(deferredBalance)}</strong>{canManage && <button type="button" aria-label="Smazat odložené splátky" disabled={deleteDeferred.isPending} onClick={() => deleteDeferred.mutate()}><Trash2 size={13} /></button>}</div>
-          )}
-        </div>
-        <div className="income-flow" aria-label="Rozdělení příjmu">
-          {rows.map((row) => (
-            <div
-              className={`income-flow-row income-flow-row--${row.tone}`}
-              key={row.key}
-            >
-              <div className="income-flow-icon">
-                <row.icon size={17} />
-              </div>
-              <div>
-                <strong>{row.label}</strong>
-                {row.key === "debt" && scheduledDebtPayment > 0 ? (
-                  <div className="income-debt-split">
-                    <span><em>Pravidelné splátky</em><b>{validAmount ? czk.format(scheduledApplied) : "—"}</b></span>
-                    <span><em>Předčasné splátky</em><b>{validAmount ? czk.format(debtBudget) : "—"}</b></span>
-                  </div>
-                ) : <span>{row.note}</span>}
-              </div>
-              <b>{row.percent} %</b>
-              <output>
-                {validAmount ? czk.format(row.amount) : "—"}
-              </output>
-            </div>
-          ))}
-        </div>
+  useEffect(() => {
+    if (balanceWatch.watch.phase !== "confirmed" || btcAmountToProcess <= .005 || btcPurchaseStarted.current) return;
+    btcPurchaseStarted.current = true;
+    startBtcPurchase({ amountCzk: btcAmountToProcess });
+  }, [balanceWatch.watch.phase, btcAmountToProcess, startBtcPurchase]);
+
+  const btcStatusPhase = btcPurchase.isError
+    ? "error"
+    : btcPurchase.isSuccess
+      ? "confirmed"
+      : btcPurchase.isPending
+        ? "waiting"
+        : balanceWatch.watch.phase;
+  const btcStatusText = btcPurchase.isError
+    ? "Nákup BTC se nepodařilo dokončit"
+    : btcPurchase.isSuccess
+      ? "BTC nakoupeno a zapsáno"
+      : btcPurchase.isPending
+        ? "Nakupuji BTC na Coinmate"
+        : balanceWatch.watch.phase === "starting"
+          ? "Připravuji sledování připsání CZK"
+          : balanceWatch.watch.phase === "waiting"
+            ? "Čekám na připsání CZK"
+            : balanceWatch.watch.phase === "confirmed"
+              ? "Připsání CZK potvrzeno"
+              : "Kontrola připsání CZK selhala";
+
+  return <section className={`income-page${processing ? " income-page--processing" : ""}`}>
+    <div className="income-hero">
+      <div className="income-capital">
+        <div className="income-capital-main"><p>VOLNÝ KAPITÁL</p><label><input aria-label="Volný kapitál" inputMode="decimal" value={capital} placeholder="0" onChange={(event) => setCapital(formatCzkInput(event.target.value))} onBlur={() => validAmount && saveCapital.mutate()} /><span>Kč</span></label></div>
+        {deferredBalance > 0.01 && <div className="income-deferred-balance"><span>Odložené splátky</span><strong>{czk.format(deferredBalance)}</strong>{canManage && <button type="button" aria-label="Smazat odložené splátky" disabled={deleteDeferred.isPending} onClick={() => deleteDeferred.mutate()}><Trash2 size={13} /></button>}</div>}
       </div>
-
-      {hasDebts && (
-        <div className="income-debts">
-          <div className="income-section-heading">
-            <div>
-              <p>PLÁN SPLÁTEK</p>
-              <h2>Rozdělení podle priorit</h2>
-            </div>
-            <div>
-              <span>Budget</span>
-              <strong>{czk.format(debtBudget)}</strong>
-            </div>
-          </div>
-          <div className="income-debt-list">
-            {initial.debts.map((debt) => {
-              const payment = allocations.get(debt.id) ?? 0;
-              return (
-                <div className="income-debt-row" key={debt.id}>
-                  <div>
-                    <strong>{debt.name}</strong>
-                    <span>
-                      {debt.priority === 0
-                        ? "Mimo automatický plán"
-                        : `Priorita ${debt.priority}/5`}
-                    </span>
-                  </div>
-                  <div className="income-debt-bar">
-                    <span
-                      style={{
-                        width: `${debt.balanceCzk > 0 ? Math.min(100, (payment / debt.balanceCzk) * 100) : 0}%`,
-                      }}
-                    />
-                  </div>
-                  <small>Zůstatek {czk.format(debt.balanceCzk)}</small>
-                  <output>{payment > 0 ? czk.format(payment) : "—"}</output>
+      <div className="income-distribution" style={{ "--income-compact-row-height": `${compactRowHeight}px` } as CSSProperties} aria-label="Rozdělení příjmu">
+        <span className="income-vault-feed" aria-hidden="true" />
+        {rows.map((row, index) => {
+          const btcHasVisibleStatus = btcStatusPhase !== "idle" && btcStatusPhase !== "ready";
+          const expanded = ((btcStep === "qr" || btcStep === "closing" || btcHasVisibleStatus) && row.key === "btc") || (debtStep === "active" && row.key === "debt") || (cashStep === "active" && row.key === "cash");
+          return <div className={`income-distribution-row${index === 0 ? " first" : ""}${index === rows.length - 1 ? " last" : ""}${expanded ? " income-distribution-row--expanded" : ""}`} key={row.key}>
+            <div className="income-vault-branch income-vault-branches" aria-hidden="true"><b>{row.percent} %</b></div>
+            <article className={`income-flow-row income-flow-row--${row.tone}${expanded ? " income-flow-row--expanded" : ""}`} data-expanded={expanded ? "true" : "false"}>
+              <div className="income-flow-icon"><row.icon size={17} /></div>
+              <div className="income-envelope-copy"><strong>{row.label}</strong>{row.key === "debt" && scheduledDebtPayment > 0 ? <div className="income-debt-split"><span><em>Pravidelné splátky</em><b>{validAmount ? czk.format(scheduledApplied) : "—"}</b></span><span><em>Předčasné splátky</em><b>{validAmount ? czk.format(debtBudget) : "—"}</b></span></div> : <span>{row.note}</span>}</div>
+              <div className="income-envelope-value"><output>{validAmount ? czk.format(row.amount) : "—"}</output><b>{row.percent} %</b></div>
+              {row.key === "btc" && (btcStep === "qr" || btcStep === "closing") && <CoinmatePaymentQr amountCzk={row.amount} settings={settings} closing={btcStep === "closing"} watchStarting={balanceWatch.watch.phase === "starting"} onSent={startAfterBtcSent} onClosed={() => setBtcStep("waiting")} />}
+              {row.key === "btc" && processing && directBtcAmount > .005 && btcStatusPhase !== "idle" && btcStatusPhase !== "ready" && <div className={`income-btc-watch income-btc-watch--${btcStatusPhase}`} role="status">
+                <span>{btcStatusText}</span>
+                {balanceWatch.watch.phase === "error" && <button type="button" onClick={balanceWatch.retry}>Zkusit znovu</button>}
+                {btcPurchase.isError && <button type="button" onClick={() => btcPurchase.mutate({ amountCzk: btcAmountToProcess })}>Zkusit znovu</button>}
+              </div>}
+              {row.key === "debt" && debtStep === "active" && currentDebtPayment && <div className="income-debt-workflow">
+                <div className="income-debt-current">
+                  <strong>{currentDebtPayment.debt.name}</strong><output><b>{czk.format(currentDebtPayment.amount)}</b><span>/ {czk.format(currentDebtPayment.debt.balanceCzk)}</span></output>
                 </div>
-              );
-            })}
-          </div>
-          {debtBudget > allocatedDebt + 0.01 && (
-            <p className="income-remainder">
-              Po doplacení způsobilých dluhů zbývá nerozděleno{" "}
-              {czk.format(debtBudget - allocatedDebt)}.
-            </p>
-          )}
-        </div>
-      )}
-
-      {(saveCapital.error || deleteDeferred.error) && (
-        <p className="income-error" role="alert">
-          {saveCapital.error?.message ?? deleteDeferred.error?.message}
-        </p>
-      )}
-      <div className="income-footnote">
-        <Banknote size={14} />
-        <span>
-          Hypotéky a dluhy s prioritou 0 jsou mimo plán předčasného splácení.
-        </span>
+                <b className="income-debt-progress">{debtIndex + 1}/{debtPayments.length}</b>
+                <div className="income-debt-workflow-actions"><button className="income-debt-processed" type="button" disabled={debtPending} onClick={() => recordDebtPayment.mutate({ debtId: currentDebtPayment.debt.id, amountCzk: currentDebtPayment.amount, deferredAmount: currentDebtPayment.deferredAmount, expectedDeferred: localDeferredBalance })}>{recordDebtPayment.isPending ? "Zapisuji…" : "Zpracovat"}</button><button className="income-debt-defer" type="button" disabled={debtPending} onClick={deferRemaining}>{deferRemainingDebts.isPending ? "Odkládám…" : "Odložit zbývající splátky"}</button></div>
+                  {(recordDebtPayment.error || deferRemainingDebts.error) && <p className="income-workflow-error" role="alert">{recordDebtPayment.error?.message ?? deferRemainingDebts.error?.message}</p>}
+              </div>}
+              {row.key === "cash" && cashStep === "active" && <CashPaymentQr amountCzk={row.amount} iban={settings.cashAccountIban} onComplete={() => setCashStep("complete")} />}
+            </article>
+          </div>;
+        })}
       </div>
-    </section>
-  );
+    </div>
+
+    {hasDebts && <section className="income-debts" aria-labelledby="income-debts-title">
+      <div className="income-debt-panel">
+        <header className="income-section-heading">
+          <div className="income-debt-heading-copy"><span className="income-debt-heading-icon"><Landmark size={18} /></span><div><p>PLÁN SPLÁTEK</p><h2 id="income-debts-title">Rozdělení podle priorit</h2><span>Volný kapitál míří nejdřív na nejvýše hodnocené závazky.</span></div></div>
+          <div className="income-debt-budget"><span>PŘEDČASNĚ</span><strong>{czk.format(debtBudget)}</strong><small>{eligibleDebtCount} {eligibleDebtCount === 1 ? "aktivní dluh" : eligibleDebtCount < 5 ? "aktivní dluhy" : "aktivních dluhů"}</small></div>
+        </header>
+        <div className="income-debt-list">{initial.debts.map((debt) => {
+          const payment = allocations.get(debt.id) ?? 0;
+          const coverage = debt.balanceCzk > 0 ? Math.min(100, payment / debt.balanceCzk * 100) : 0;
+          return <article className={`income-debt-row${debt.priority === 0 ? " income-debt-row--excluded" : ""}`} key={debt.id}>
+            <div className="income-debt-priority" aria-label={debt.priority === 0 ? "Mimo automatický plán" : `Priorita ${debt.priority} z 5`}><b>{debt.priority || "—"}</b><span>{debt.priority === 0 ? "MIMO" : "PRIORITA"}</span></div>
+            <div className="income-debt-row-copy"><strong>{debt.name}</strong>{debt.priority === 0 && <em>Mimo automatický plán</em>}<span>Zůstatek {czk.format(debt.balanceCzk)}</span></div>
+            <div className="income-debt-coverage"><div><span>Pokrytí plánem</span><b>{payment > .005 ? `${Math.round(coverage)} %` : "—"}</b></div><div className="income-debt-bar" aria-hidden="true"><span style={{ width: `${coverage}%` }} /></div></div>
+            <div className="income-debt-row-value"><span>PLÁNOVÁNO</span><output>{payment > .005 ? czk.format(payment) : "—"}</output></div>
+          </article>;
+        })}</div>
+        {debtBudget > allocatedDebt + 0.01 && <p className="income-remainder"><CircleDollarSign size={15} /><span>Po doplacení způsobilých dluhů zůstává k přerozdělení</span><strong>{czk.format(debtBudget - allocatedDebt)}</strong></p>}
+      </div>
+    </section>}
+    {(saveCapital.error || deleteDeferred.error) && <p className="income-error" role="alert">{saveCapital.error?.message ?? deleteDeferred.error?.message}</p>}
+    <div className="income-footnote"><Banknote size={14} /><span>Hypotéky a dluhy s prioritou 0 jsou mimo plán předčasného splácení.</span></div>
+  </section>;
 }

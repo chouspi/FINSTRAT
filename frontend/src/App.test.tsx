@@ -62,6 +62,20 @@ describe('hidden login', () => {
     expect(within(screen.getByRole('banner')).queryByText('BTC / USD')).not.toBeInTheDocument()
     expect(screen.queryByText('PRIVATE LEDGER')).not.toBeInTheDocument()
     expect(within(sidebar).queryByText('Výdaje')).not.toBeInTheDocument()
+    expect(within(sidebar).queryByText('Dashboard')).not.toBeInTheDocument()
+  })
+
+  it('returns to Dashboard when the active navigation item is clicked again', async () => {
+    const user = userEvent.setup()
+    await renderApp('/income-plan')
+    const sidebar = screen.getByRole('complementary')
+    const activeLink = within(sidebar).getByRole('link', { name: 'Income plán, zpět na Dashboard' })
+
+    expect(activeLink).toHaveClass('nav-item--active')
+    await user.click(activeLink)
+
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
+    expect(within(sidebar).getByRole('link', { name: 'Income plán' })).not.toHaveClass('nav-item--active')
   })
 
   it('locks page scrolling and closes the legacy mobile sheet with Escape', async () => {

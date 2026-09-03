@@ -7,8 +7,7 @@ import {
   Bitcoin,
   BookOpenCheck,
   ChartNoAxesCombined,
-  ChevronRight,
-  CircleGauge,
+  ChevronLeft,
   Landmark,
   LogOut,
   Menu,
@@ -65,7 +64,6 @@ const navigation: { label: string; items: NavItem[] }[] = [
   {
     label: 'Navigace',
     items: [
-      { label: 'Dashboard', icon: CircleGauge, href: '/' },
       { label: 'Income plán', icon: Banknote, href: '/income-plan' },
       { label: 'Jmění', icon: ChartNoAxesCombined, href: '/wealth' },
       { label: 'Strategie', icon: TrendingUp, href: '/strategy' },
@@ -77,6 +75,18 @@ const navigation: { label: string; items: NavItem[] }[] = [
     ],
   },
 ]
+
+const pageHeadings: Record<string, string> = {
+  '/': 'Dashboard',
+  '/income-plan': 'Income plán',
+  '/wealth': 'Jmění',
+  '/strategy': 'Strategie',
+  '/bitcoin': 'BTC Účty',
+  '/vwce': 'VWCE',
+  '/debts': 'Dluhy',
+  '/taxes': 'Daně',
+  '/settings': 'Nastavení',
+}
 
 const usdFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -98,6 +108,7 @@ function App() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const incomeProcessing = useRouterState({ select: (state) => state.location.pathname === '/income-plan' && (state.location.search as { dialog?: string }).dialog === 'process' })
   const [loginOpen, setLoginOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -143,6 +154,8 @@ function App() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['bitcoin'] }),
         queryClient.invalidateQueries({ queryKey: ['vwce'] }),
+        queryClient.invalidateQueries({ queryKey: ['debts'] }),
+        queryClient.invalidateQueries({ queryKey: ['income-plan'] }),
         queryClient.invalidateQueries({ queryKey: ['wealth'] }),
       ])
     },
@@ -201,6 +214,7 @@ function App() {
   }
 
   const signedInUser = currentUser.data?.isDefault === false ? currentUser.data : null
+  const pageHeading = pageHeadings[pathname] ?? pageHeadings['/']
   const priceUsd = btcPrice.data?.priceUsd
   const displayedBtcPrice = typeof priceUsd === 'number' && Number.isFinite(priceUsd)
     ? usdFormatter.format(priceUsd)
@@ -257,17 +271,17 @@ function App() {
                   <>
                     <Icon size={18} strokeWidth={1.8} />
                     <span>{item.label}</span>
-                    {isActive && <ChevronRight className="nav-arrow" size={15} />}
+                    {isActive && <ChevronLeft className="nav-arrow" size={14} aria-hidden="true" />}
                   </>
                 )
                 if (item.href) {
                   return (
                     <Link
                       className={`nav-item${isActive ? ' nav-item--active' : ''}`}
-                      to={item.href}
+                      to={isActive ? '/' : item.href}
                       key={item.label}
                       title={sidebarCollapsed ? item.label : undefined}
-                      aria-current={isActive ? 'page' : undefined}
+                      aria-label={isActive ? `${item.label}, zpět na Dashboard` : undefined}
                       onClick={() => setSidebarOpen(false)}
                     >
                       {content}
@@ -369,7 +383,7 @@ function App() {
           </div>
           <div className="header-heading">
             <button className="mobile-login-logo" type="button" aria-label="Otevřít přihlášení" onClick={handleLogoClick}><Bitcoin size={18} strokeWidth={2.2} /></button>
-             <h1 className="header-title">{pathname === '/bitcoin' ? 'BTC Účty' : pathname === '/vwce' ? 'VWCE' : pathname === '/debts' ? 'Dluhy' : pathname === '/income-plan' ? 'Income plán' : pathname === '/wealth' ? 'Jmění' : pathname === '/strategy' ? 'Strategie' : pathname === '/taxes' ? 'Daně' : pathname === '/settings' ? 'Nastavení' : 'Dashboard'}</h1>
+            <h1 className="header-title">{pageHeading}</h1>
           </div>
           {pathname === '/bitcoin' ? (
             <div className="header-actions">
@@ -417,16 +431,16 @@ function App() {
             </div>
           ) : pathname === '/income-plan' && signedInUser ? (
             <div className="header-actions">
-              <button className="income-header-action" type="button" onClick={() => void navigate({ to: '/income-plan', search: { dialog: 'process' } })}><Banknote size={14} /><span>Zpracovat příjem</span></button>
+              <button className="income-header-action" type="button" onClick={() => void navigate({ to: '/income-plan', search: { dialog: incomeProcessing ? undefined : 'process' } })}><Banknote size={14} /><span>{incomeProcessing ? 'Ukončit zpracování' : 'Zpracovat příjem'}</span></button>
             </div>
           ) : <div aria-hidden="true" />}
         </header>
         <main className="workspace" aria-label="Pracovní plocha"><Outlet /></main>
       </div>
 
-      {moreOpen && <div className="more-sheet-backdrop" role="presentation" onClick={() => setMoreOpen(false)}><section className="more-sheet" aria-label="Další navigace" onClick={(event) => event.stopPropagation()}><div className="sheet-handle" /><div className="sheet-title"><button className="sheet-brand" type="button" onClick={handleLogoClick}><Bitcoin size={15} /> Portfolio</button><button type="button" aria-label="Zavřít další navigaci" onClick={() => setMoreOpen(false)}><X size={18} /></button></div><Link to="/wealth" search={{ tab: undefined }} className={pathname === '/wealth' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><ChartNoAxesCombined size={18} />Jmění</Link><Link to="/strategy" className={pathname === '/strategy' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><TrendingUp size={18} />Strategie</Link><Link to="/debts" search={{ dialog: undefined }} className={pathname === '/debts' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><WalletCards size={18} />Dluhy</Link><Link to="/taxes" className={pathname === '/taxes' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><BookOpenCheck size={18} />Daně</Link><Link className={pathname === '/settings' ? 'sheet-link active' : 'sheet-link'} to="/settings" search={{ tab: undefined }} onClick={() => setMoreOpen(false)}><Settings size={18} />Nastavení</Link><div className="sheet-price"><span>BTC / USD</span><strong>{displayedBtcPrice}</strong>{displayedChange24h && <small className={change24hClass}>{displayedChange24h}</small>}</div></section></div>}
+      {moreOpen && <div className="more-sheet-backdrop" role="presentation" onClick={() => setMoreOpen(false)}><section className="more-sheet" aria-label="Další navigace" onClick={(event) => event.stopPropagation()}><div className="sheet-handle" /><div className="sheet-title"><button className="sheet-brand" type="button" onClick={handleLogoClick}><Bitcoin size={15} /> Portfolio</button><button type="button" aria-label="Zavřít další navigaci" onClick={() => setMoreOpen(false)}><X size={18} /></button></div><Link to={pathname === '/wealth' ? '/' : '/wealth'} search={{ tab: undefined }} className={pathname === '/wealth' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><ChartNoAxesCombined size={18} />Jmění{pathname === '/wealth' && <ChevronLeft className="sheet-back" size={14} />}</Link><Link to={pathname === '/strategy' ? '/' : '/strategy'} className={pathname === '/strategy' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><TrendingUp size={18} />Strategie{pathname === '/strategy' && <ChevronLeft className="sheet-back" size={14} />}</Link><Link to={pathname === '/debts' ? '/' : '/debts'} search={{ dialog: undefined }} className={pathname === '/debts' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><WalletCards size={18} />Dluhy{pathname === '/debts' && <ChevronLeft className="sheet-back" size={14} />}</Link><Link to={pathname === '/taxes' ? '/' : '/taxes'} className={pathname === '/taxes' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><BookOpenCheck size={18} />Daně{pathname === '/taxes' && <ChevronLeft className="sheet-back" size={14} />}</Link><Link className={pathname === '/settings' ? 'sheet-link active' : 'sheet-link'} to={pathname === '/settings' ? '/' : '/settings'} search={{ tab: undefined }} onClick={() => setMoreOpen(false)}><Settings size={18} />Nastavení{pathname === '/settings' && <ChevronLeft className="sheet-back" size={14} />}</Link><div className="sheet-price"><span>BTC / USD</span><strong>{displayedBtcPrice}</strong>{displayedChange24h && <small className={change24hClass}>{displayedChange24h}</small>}</div></section></div>}
 
-      <nav className="bottom-nav" aria-label="Mobilní navigace"><Link to="/" className={pathname === '/' ? 'active' : undefined}><CircleGauge size={20} /><span>Dashboard</span></Link><Link to="/income-plan" search={{ dialog: undefined }} className={pathname === '/income-plan' ? 'active' : undefined}><Banknote size={20} /><span>Income</span></Link><Link to="/bitcoin" search={{ dialog: undefined }} className={pathname === '/bitcoin' ? 'active' : undefined}><Bitcoin size={20} /><span>BTC Účty</span></Link><Link to="/vwce" search={{ dialog: undefined }} className={pathname === '/vwce' ? 'active' : undefined}><Landmark size={20} /><span>VWCE</span></Link><button type="button" className={pathname === '/wealth' || pathname === '/strategy' || pathname === '/taxes' || pathname === '/debts' || pathname === '/settings' || moreOpen ? 'active' : undefined} aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}><MoreHorizontal size={20} /><span>Více</span></button></nav>
+      <nav className="bottom-nav" aria-label="Mobilní navigace"><Link to={pathname === '/income-plan' ? '/' : '/income-plan'} search={{ dialog: undefined }} className={pathname === '/income-plan' ? 'active' : undefined}><Banknote size={20} /><span>Income</span></Link><Link to={pathname === '/bitcoin' ? '/' : '/bitcoin'} search={{ dialog: undefined }} className={pathname === '/bitcoin' ? 'active' : undefined}><Bitcoin size={20} /><span>BTC Účty</span></Link><Link to={pathname === '/vwce' ? '/' : '/vwce'} search={{ dialog: undefined }} className={pathname === '/vwce' ? 'active' : undefined}><Landmark size={20} /><span>VWCE</span></Link><button type="button" className={pathname === '/wealth' || pathname === '/strategy' || pathname === '/taxes' || pathname === '/debts' || pathname === '/settings' || moreOpen ? 'active' : undefined} aria-label={!moreOpen && ['/wealth', '/strategy', '/taxes', '/debts', '/settings'].includes(pathname) ? 'Více, zpět na Dashboard' : 'Více'} aria-expanded={!moreOpen && ['/wealth', '/strategy', '/taxes', '/debts', '/settings'].includes(pathname) ? undefined : moreOpen} onClick={() => { if (!moreOpen && ['/wealth', '/strategy', '/taxes', '/debts', '/settings'].includes(pathname)) void navigate({ to: '/' }); else setMoreOpen((open) => !open) }}><MoreHorizontal size={20} /><span>Více</span></button></nav>
 
       {loginOpen && (
         <LoginDialog

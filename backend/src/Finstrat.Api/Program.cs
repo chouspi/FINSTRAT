@@ -78,8 +78,13 @@ builder.Services.AddHttpClient("vwce-price", client =>
     client.Timeout = TimeSpan.FromSeconds(8);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("FINSTRAT/2.0");
 });
+builder.Services.AddHttpClient("coinmate-controller", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
 builder.Services.AddSingleton<BtcPriceService>();
 builder.Services.AddSingleton<VwcePriceService>();
+builder.Services.AddSingleton<CoinmateBalanceWatchService>();
 builder.Services.AddScoped<BitcoinQueryService>();
 builder.Services.AddScoped<BitcoinCommandService>();
 builder.Services.AddScoped<VwceQueryService>();

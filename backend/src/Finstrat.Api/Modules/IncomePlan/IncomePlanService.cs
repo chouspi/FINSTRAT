@@ -1,14 +1,17 @@
 using System.Data;
 using System.Globalization;
+using System.Text;
 using Finstrat.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Finstrat.Api.Modules.IncomePlan;
 
 public sealed class IncomePlanService(ApplicationDbContext dbContext)
 {
-    private static readonly IncomePlanSettingsResponse Defaults = new(0, 90, 10, 70, 20, 10, 0);
+    private static readonly IncomePlanSettingsResponse Defaults = new(
+        0, 90, 10, 70, 20, 10, 0, null, null, null, null);
 
     public async Task<IncomePlanOverviewResponse> GetOverviewAsync(
         Guid householdId, Guid userId, CancellationToken cancellationToken)
@@ -48,22 +51,33 @@ public sealed class IncomePlanService(ApplicationDbContext dbContext)
     {
         var capital = ParseCapital(request.DefaultCapitalCzk);
         ValidatePercentages(request);
+        var cashAccountIban = ValidateCzechIban(request.CashAccountIban, "hotovostního účtu");
+        var coinmateIban = ValidateCzechIban(request.CoinmateIban, "Coinmate účtu");
+        var coinmateVariableSymbol = ValidateCoinmateVariableSymbol(request.CoinmateVariableSymbol);
+        var coinmateRecipientMessage = ValidateCoinmateRecipientMessage(request.CoinmateRecipientMessage);
         var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
         if (connection.State != ConnectionState.Open) await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             INSERT INTO income_plan_settings (
               household_id, user_id, default_capital_czk,
               without_debt_btc_percent, without_debt_cash_percent,
-              with_debt_btc_percent, with_debt_debt_percent, with_debt_cash_percent
+              with_debt_btc_percent, with_debt_debt_percent, with_debt_cash_percent,
+              cash_account_iban, coinmate_iban, coinmate_variable_symbol,
+              coinmate_recipient_message
             ) VALUES (@household_id, @user_id, @capital, @without_btc, @without_cash,
-              @with_btc, @with_debt, @with_cash)
+              @with_btc, @with_debt, @with_cash, @cash_account_iban, @coinmate_iban,
+              @coinmate_variable_symbol, @coinmate_recipient_message)
             ON CONFLICT (household_id, user_id) DO UPDATE SET
               default_capital_czk = EXCLUDED.default_capital_czk,
               without_debt_btc_percent = EXCLUDED.without_debt_btc_percent,
               without_debt_cash_percent = EXCLUDED.without_debt_cash_percent,
               with_debt_btc_percent = EXCLUDED.with_debt_btc_percent,
               with_debt_debt_percent = EXCLUDED.with_debt_debt_percent,
-              with_debt_cash_percent = EXCLUDED.with_debt_cash_percent
+              with_debt_cash_percent = EXCLUDED.with_debt_cash_percent,
+              cash_account_iban = EXCLUDED.cash_account_iban,
+              coinmate_iban = EXCLUDED.coinmate_iban,
+              coinmate_variable_symbol = EXCLUDED.coinmate_variable_symbol,
+              coinmate_recipient_message = EXCLUDED.coinmate_recipient_message
             """, connection);
         command.Parameters.AddWithValue("household_id", householdId);
         command.Parameters.AddWithValue("user_id", userId);
@@ -73,6 +87,14 @@ public sealed class IncomePlanService(ApplicationDbContext dbContext)
         command.Parameters.AddWithValue("with_btc", request.WithDebtBtcPercent);
         command.Parameters.AddWithValue("with_debt", request.WithDebtDebtPercent);
         command.Parameters.AddWithValue("with_cash", request.WithDebtCashPercent);
+        command.Parameters.Add("cash_account_iban", NpgsqlDbType.Varchar).Value =
+            (object?)cashAccountIban ?? DBNull.Value;
+        command.Parameters.Add("coinmate_iban", NpgsqlDbType.Varchar).Value =
+            (object?)coinmateIban ?? DBNull.Value;
+        command.Parameters.Add("coinmate_variable_symbol", NpgsqlDbType.Varchar).Value =
+            (object?)coinmateVariableSymbol ?? DBNull.Value;
+        command.Parameters.Add("coinmate_recipient_message", NpgsqlDbType.Varchar).Value =
+            (object?)coinmateRecipientMessage ?? DBNull.Value;
         await command.ExecuteNonQueryAsync(cancellationToken);
         return await ReadSettingsAsync(connection, householdId, userId, cancellationToken);
     }
@@ -158,7 +180,8 @@ public sealed class IncomePlanService(ApplicationDbContext dbContext)
         await using var command = new NpgsqlCommand("""
             SELECT default_capital_czk, without_debt_btc_percent, without_debt_cash_percent,
               with_debt_btc_percent, with_debt_debt_percent, with_debt_cash_percent,
-              deferred_debt_payment_czk
+              deferred_debt_payment_czk, cash_account_iban, coinmate_iban,
+              coinmate_variable_symbol, coinmate_recipient_message
             FROM income_plan_settings WHERE household_id = @household_id AND user_id = @user_id
             """, connection);
         command.Parameters.AddWithValue("household_id", householdId);
@@ -167,7 +190,10 @@ public sealed class IncomePlanService(ApplicationDbContext dbContext)
         if (!await reader.ReadAsync(cancellationToken)) return Defaults;
         return new IncomePlanSettingsResponse(reader.GetDecimal(0), reader.GetDecimal(1),
             reader.GetDecimal(2), reader.GetDecimal(3), reader.GetDecimal(4), reader.GetDecimal(5),
-            reader.GetDecimal(6));
+            reader.GetDecimal(6), reader.IsDBNull(7) ? null : reader.GetString(7),
+            reader.IsDBNull(8) ? null : reader.GetString(8),
+            reader.IsDBNull(9) ? null : reader.GetString(9),
+            reader.IsDBNull(10) ? null : reader.GetString(10));
     }
 
     private static async Task<List<IncomePlanDebtResponse>> ReadDebtsAsync(
@@ -226,6 +252,61 @@ public sealed class IncomePlanService(ApplicationDbContext dbContext)
             || request.WithoutDebtBtcPercent + request.WithoutDebtCashPercent != 100
             || request.WithDebtBtcPercent + request.WithDebtDebtPercent + request.WithDebtCashPercent != 100)
             throw new IncomePlanValidationException("Alokace v každém režimu musí dávat přesně 100 %.");
+    }
+
+    private static string? ValidateCzechIban(string? value, string accountName)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        var iban = string.Concat(value.Trim().Where(character => !char.IsWhiteSpace(character)))
+            .ToUpperInvariant();
+        if (iban.Length != 24 || !iban.StartsWith("CZ", StringComparison.Ordinal)
+            || iban[2..].Any(character => !char.IsAsciiDigit(character))
+            || !HasValidIbanChecksum(iban))
+            throw new IncomePlanValidationException($"IBAN {accountName} musí být platný český IBAN.");
+        return iban;
+    }
+
+    private static string? ValidateCoinmateVariableSymbol(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        var variableSymbol = value.Trim();
+        if (variableSymbol.Length is < 1 or > 10
+            || variableSymbol.Any(character => !char.IsAsciiDigit(character)))
+            throw new IncomePlanValidationException("Variabilní symbol Coinmate musí obsahovat 1 až 10 číslic.");
+        return variableSymbol;
+    }
+
+    private static string? ValidateCoinmateRecipientMessage(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (value.Any(character => character is '\r' or '\n'))
+            throw new IncomePlanValidationException(
+                "Zpráva pro příjemce Coinmate smí mít nejvýše 60 běžných znaků.");
+
+        var message = string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            .Normalize(NormalizationForm.FormC);
+        if (message.Length > 60 || message.Any(character =>
+                !char.IsLetterOrDigit(character)
+                && character is not (' ' or '-' or '.' or ',' or '/' or '(' or ')' or '+'
+                    or '\'' or ':' or '?' or '!' or '&')))
+            throw new IncomePlanValidationException(
+                "Zpráva pro příjemce Coinmate smí mít nejvýše 60 běžných znaků.");
+        return message;
+    }
+
+    private static bool HasValidIbanChecksum(string iban)
+    {
+        var remainder = 0;
+        foreach (var character in iban[4..] + iban[..4])
+        {
+            if (char.IsAsciiDigit(character))
+                remainder = (remainder * 10 + character - '0') % 97;
+            else
+                remainder = (remainder * 100 + character - 'A' + 10) % 97;
+        }
+        return remainder == 1;
     }
 }
 

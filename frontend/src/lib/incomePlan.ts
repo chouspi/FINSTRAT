@@ -9,14 +9,29 @@ export type IncomeAllocation = {
   cashAmount: number
 }
 export type DeferredVwceAllocation = { btcAmount: number; vwceAmount: number }
-export const CASH_PAYMENT_IBAN = 'CZ0506000000000264886458'
-
-export function createCashPaymentPayload(amountCzk: number, paymentDate: string) {
+export type IncomeAllocationLimits = {
+  eligibleDebtBalanceCzk: number
+  withoutDebtBtcPercent: number
+  withoutDebtCashPercent: number
+}
+export function createCoinmatePaymentPayload(amountCzk: number, iban: string, variableSymbol: string, recipientMessage: string) {
   if (!Number.isFinite(amountCzk) || amountCzk <= 0) throw new Error('Částka QR platby musí být kladná.')
-  const compactDate = paymentDate.replaceAll('-', '')
-  if (!/^\d{8}$/.test(compactDate)) throw new Error('Datum QR platby není platné.')
-  const amount = (Math.round(amountCzk * 100) / 100).toFixed(2).replace(/0$/, '')
-  return `SPD*1.0*ACC:${CASH_PAYMENT_IBAN}*AM:${amount}*CC:CZK*DT:${compactDate}*`
+  const compactIban = iban.replace(/\s/g, '').toUpperCase()
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(compactIban)) throw new Error('IBAN pro Coinmate QR není platný.')
+  const compactVariableSymbol = variableSymbol.trim()
+  if (!/^\d{1,10}$/.test(compactVariableSymbol)) throw new Error('Variabilní symbol pro Coinmate QR není platný.')
+  const message = recipientMessage.trim()
+  if (!message || message.includes('*')) throw new Error('Zpráva pro Coinmate QR není platná.')
+  const amount = (Math.round(amountCzk * 100) / 100).toFixed(2)
+  return `SPD*1.0*ACC:${compactIban}*AM:${amount}*CC:CZK*X-VS:${compactVariableSymbol}*MSG:${message}*`
+}
+
+export function createCashPaymentPayload(amountCzk: number, iban: string) {
+  if (!Number.isFinite(amountCzk) || amountCzk <= 0) throw new Error('Částka QR platby musí být kladná.')
+  const compactIban = iban.replace(/\s/g, '').toUpperCase()
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(compactIban)) throw new Error('IBAN pro Cash QR není platný.')
+  const amount = (Math.round(amountCzk * 100) / 100).toFixed(2)
+  return `SPD*1.0*ACC:${compactIban}*AM:${amount}*CC:CZK*MSG:Cash rezerva*`
 }
 
 export function formatCzkInput(value: string) {
@@ -68,6 +83,7 @@ export function calculateIncomeAllocation(
   debtPercent: number,
   cashPercent: number,
   hasDebts: boolean,
+  limits?: IncomeAllocationLimits,
 ): IncomeAllocation {
   const scheduledApplied = scheduledDebtPayment > 0 && capital >= scheduledDebtPayment
     ? scheduledDebtPayment
@@ -78,18 +94,31 @@ export function calculateIncomeAllocation(
   const rawDebtBudget = distributableCapital * debtPercent / 100
   const scheduledDebtOffset = Math.min(scheduledApplied, rawDebtBudget)
   const nonDebtPercent = btcPercent + cashPercent
-  const btcAmount = distributableCapital * btcPercent / 100
+  let btcAmount = distributableCapital * btcPercent / 100
     + (nonDebtPercent > 0 ? scheduledDebtOffset * btcPercent / nonDebtPercent : 0)
-  const cashAmount = distributableCapital * cashPercent / 100
+  let cashAmount = distributableCapital * cashPercent / 100
     + (nonDebtPercent > 0 ? scheduledDebtOffset * cashPercent / nonDebtPercent : 0)
-  const freshDebtBudget = rawDebtBudget - scheduledDebtOffset
+  let freshDebtBudget = rawDebtBudget - scheduledDebtOffset
+  let debtBudget = freshDebtBudget + deferredApplied
+  if (hasDebts && limits) {
+    const earlyPaymentCapacity = Math.max(0, limits.eligibleDebtBalanceCzk - scheduledApplied)
+    const cappedDebtBudget = Math.min(debtBudget, earlyPaymentCapacity)
+    const excessDebtBudget = debtBudget - cappedDebtBudget
+    const fallbackTotal = limits.withoutDebtBtcPercent + limits.withoutDebtCashPercent
+    if (excessDebtBudget > 0 && fallbackTotal > 0) {
+      btcAmount += excessDebtBudget * limits.withoutDebtBtcPercent / fallbackTotal
+      cashAmount += excessDebtBudget * limits.withoutDebtCashPercent / fallbackTotal
+    }
+    debtBudget = cappedDebtBudget
+    freshDebtBudget = Math.min(freshDebtBudget, Math.max(0, debtBudget - deferredApplied))
+  }
   return {
     scheduledApplied,
     deferredApplied,
     distributableCapital,
     btcAmount,
     freshDebtBudget,
-    debtBudget: freshDebtBudget + deferredApplied,
+    debtBudget,
     cashAmount,
   }
 }
