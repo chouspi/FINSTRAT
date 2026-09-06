@@ -163,8 +163,8 @@ describe('IncomePlanPage', () => {
     await waitFor(() => expect(document.querySelector('.income-debt-workflow')).not.toBeInTheDocument())
     const cashRow = screen.getByText('Cash').closest('.income-flow-row') as HTMLElement
     expect(cashRow).toHaveAttribute('data-expanded', 'true')
-    await waitFor(() => expect(overviewRefetchedAfterDefer).toBe(true))
     expect(await within(cashRow).findByRole('img', { name: /Cash QR pro převod 80[  ]Kč/ })).toBeInTheDocument()
+    expect(overviewRefetchedAfterDefer).toBe(false)
     const deferCall = vi.mocked(fetch).mock.calls.find(([url, options]) => String(url).endsWith('/deferred-debt-payment') && options?.method === 'POST')
     expect(JSON.parse(String(deferCall?.[1]?.body))).toEqual({ amountCzk: '300.00', expectedDeferredDebtPaymentCzk: '200.00' })
   })

@@ -12,6 +12,7 @@ public sealed class BitcoinQueryService(ApplicationDbContext dbContext)
         Guid householdId,
         Guid userId,
         Guid accountId,
+        bool isDefaultViewer,
         CancellationToken cancellationToken)
     {
         var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
@@ -63,11 +64,12 @@ public sealed class BitcoinQueryService(ApplicationDbContext dbContext)
         var movements = new List<BitcoinMovementResponse>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            movements.Add(new BitcoinMovementResponse(
+            movements.Add(MaskMovementForViewer(new BitcoinMovementResponse(
                 reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
                 reader.GetDecimal(4), reader.IsDBNull(5) ? null : reader.GetDecimal(5),
                 reader.GetDateTime(6), reader.IsDBNull(7) ? null : reader.GetString(7),
-                reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetBoolean(9), reader.GetBoolean(10)));
+                reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetBoolean(9), reader.GetBoolean(10)),
+                isDefaultViewer));
         }
         return movements;
     }
@@ -148,6 +150,7 @@ public sealed class BitcoinQueryService(ApplicationDbContext dbContext)
     public async Task<BitcoinOverviewResponse> GetOverviewAsync(
         Guid householdId,
         Guid userId,
+        bool isDefaultViewer,
         CancellationToken cancellationToken)
     {
         var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
@@ -157,7 +160,8 @@ public sealed class BitcoinQueryService(ApplicationDbContext dbContext)
         try
         {
             var accounts = await ReadAccountsAsync(connection, householdId, userId, cancellationToken);
-            var movements = await ReadMovementsAsync(connection, householdId, userId, cancellationToken);
+            var movements = await ReadMovementsAsync(
+                connection, householdId, userId, isDefaultViewer, cancellationToken);
             return new BitcoinOverviewResponse(
                 new BitcoinTotalsResponse(
                     accounts.Sum(account => account.QuantityBtc),
@@ -303,6 +307,7 @@ public sealed class BitcoinQueryService(ApplicationDbContext dbContext)
         NpgsqlConnection connection,
         Guid householdId,
         Guid userId,
+        bool isDefaultViewer,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -364,7 +369,7 @@ public sealed class BitcoinQueryService(ApplicationDbContext dbContext)
         var movements = new List<BitcoinMovementResponse>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            movements.Add(new BitcoinMovementResponse(
+            movements.Add(MaskMovementForViewer(new BitcoinMovementResponse(
                 reader.GetGuid(0),
                 reader.GetGuid(1),
                 reader.GetString(2),
@@ -373,8 +378,16 @@ public sealed class BitcoinQueryService(ApplicationDbContext dbContext)
                 reader.IsDBNull(5) ? null : reader.GetDecimal(5),
                 reader.GetDateTime(6),
                 reader.IsDBNull(7) ? null : reader.GetString(7),
-                reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetBoolean(9), reader.GetBoolean(10)));
+                reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetBoolean(9), reader.GetBoolean(10)),
+                isDefaultViewer));
         }
         return movements;
     }
+
+    private static BitcoinMovementResponse MaskMovementForViewer(
+        BitcoinMovementResponse movement,
+        bool isDefaultViewer) =>
+        isDefaultViewer && movement.Type == "vwce_reallocation"
+            ? movement with { Type = "standalone", Note = "jiný výdaj" }
+            : movement;
 }

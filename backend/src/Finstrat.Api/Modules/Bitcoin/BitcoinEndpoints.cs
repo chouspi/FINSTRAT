@@ -22,7 +22,8 @@ public static class BitcoinEndpoints
                 ?? throw new InvalidOperationException("Authenticated user has no household."));
             var userId = Guid.Parse(userManager.GetUserId(principal)
                 ?? throw new InvalidOperationException("Authenticated principal has no user ID."));
-            return Results.Ok(await queryService.GetOverviewAsync(householdId, userId, cancellationToken));
+            var isDefault = principal.FindFirstValue(IdentityClaims.IsDefault) == "true";
+            return Results.Ok(await queryService.GetOverviewAsync(householdId, userId, isDefault, cancellationToken));
         });
 
         group.MapGet("/accounts/{accountId:guid}/proofs", async (
@@ -45,7 +46,9 @@ public static class BitcoinEndpoints
         {
             var (householdId, userId) = CurrentContext(principal, userManager);
             return Results.Ok(await queryService.GetAccountMovementsAsync(
-                householdId, userId, accountId, cancellationToken));
+                householdId, userId, accountId,
+                principal.FindFirstValue(IdentityClaims.IsDefault) == "true",
+                cancellationToken));
         });
 
         group.MapGet("/proofs/{proofId:guid}/content", async (

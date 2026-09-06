@@ -383,7 +383,7 @@ function IncomePlanContent({ initial, canManage, processing }: { initial: Overvi
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["debts"] }),
-        queryClient.invalidateQueries({ queryKey: ["income-plan"] }),
+        queryClient.invalidateQueries({ queryKey: ["income-plan"], refetchType: "none" }),
       ]);
     },
   });
@@ -404,7 +404,7 @@ function IncomePlanContent({ initial, canManage, processing }: { initial: Overvi
       setCashStep("active");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["debts"] }),
-        queryClient.invalidateQueries({ queryKey: ["income-plan"] }),
+        queryClient.invalidateQueries({ queryKey: ["income-plan"], refetchType: "none" }),
       ]);
     },
   });
