@@ -419,4 +419,18 @@ describe('IncomePlanPage', () => {
     await waitFor(() => expect(router.state.location.search.dialog).toBeUndefined())
     expect(screen.getByText('Bitcoin', { selector: '.income-envelope-copy > strong' }).closest('.income-flow-row')).toHaveAttribute('data-expanded', 'false')
   })
+
+  it('cancels processing and discards the saved draft', async () => {
+    mockWorkflow(100, 0)
+    const user = userEvent.setup()
+    const router = await renderPage('/income-plan?dialog=process')
+    await screen.findByRole('button', { name: 'Odesláno' })
+    expect(sessionStorage.getItem('finstrat:income-draft::samuel')).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Zrušit zpracování' }))
+
+    await waitFor(() => expect(router.state.location.search.dialog).toBeUndefined())
+    expect(sessionStorage.getItem('finstrat:income-draft::samuel')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Zrušit zpracování' })).not.toBeInTheDocument()
+  })
 })

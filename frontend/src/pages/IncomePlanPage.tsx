@@ -10,6 +10,7 @@ import {
   Landmark,
   Trash2,
   Wallet,
+  X,
 } from "lucide-react";
 import { antiforgeryToken, apiRequest } from "../lib/api";
 import {
@@ -128,7 +129,12 @@ export function IncomePlanPage() {
   const canManage = identity.data?.isDefault === false;
   const processing = dialog === "process" && canManage;
   const storageKey = processing && identity.data?.id ? `finstrat:income-draft:${identity.data.householdId ?? ""}:${identity.data.id}` : null;
-  return <IncomePlanContent key={`${identity.data?.id}:${processing}`} initial={overview.data} canManage={canManage} processing={processing} storageKey={storageKey} onNewRun={() => { if (storageKey) sessionStorage.removeItem(storageKey); void navigate({ to: "/income-plan", search: { dialog: undefined } }); void overview.refetch(); }} />;
+  const resetRun = () => {
+    if (storageKey) sessionStorage.removeItem(storageKey);
+    void navigate({ to: "/income-plan", search: { dialog: undefined } });
+    void overview.refetch();
+  };
+  return <IncomePlanContent key={`${identity.data?.id}:${processing}`} initial={overview.data} canManage={canManage} processing={processing} storageKey={storageKey} onNewRun={resetRun} onCancel={resetRun} />;
 }
 
 function CoinmatePaymentQr({ amountCzk, settings, closing, watchStarting, onSent, onClosed }: { amountCzk: number; settings: Settings; closing: boolean; watchStarting: boolean; onSent: () => void; onClosed: () => void }) {
@@ -300,7 +306,7 @@ function useCoinmateBalanceWatch(active: boolean, waiting: boolean, restored: Wa
   };
 }
 
-function IncomePlanContent({ initial: latestOverview, canManage, processing, storageKey, onNewRun }: { initial: Overview; canManage: boolean; processing: boolean; storageKey: string | null; onNewRun: () => void }) {
+function IncomePlanContent({ initial: latestOverview, canManage, processing, storageKey, onNewRun, onCancel }: { initial: Overview; canManage: boolean; processing: boolean; storageKey: string | null; onNewRun: () => void; onCancel: () => void }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState(() => readDraft(storageKey, latestOverview));
   const draftRef = useRef(draft);
@@ -542,7 +548,7 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
   ];
 
   return <section className={`income-page${processing ? " income-page--processing" : ""}`}>
-    {processing && <ol className="income-workflow-progress" aria-label="Průběh zpracování příjmu">{workflowSteps.map((step, index) => <li key={step.label} className={step.done ? "is-complete" : ""}><span className="income-workflow-number" aria-hidden="true">{step.done ? <Check size={16} /> : index + 1}</span><div><strong>{step.label}</strong><span>{step.state}</span></div></li>)}</ol>}
+    {processing && <div className="income-workflow-header"><ol className="income-workflow-progress" aria-label="Průběh zpracování příjmu">{workflowSteps.map((step, index) => <li key={step.label} className={step.done ? "is-complete" : ""}><span className="income-workflow-number" aria-hidden="true">{step.done ? <Check size={16} /> : index + 1}</span><div><strong>{step.label}</strong><span>{step.state}</span></div></li>)}</ol><button className="income-cancel-processing" type="button" onClick={onCancel}><X size={15} />Zrušit zpracování</button></div>}
     {processing && btcSent && (vwceAmount <= .005 || vwceDone) && cashStep === "complete" && <div className="income-completion" role="status"><Check size={18} /><span>{directBtcAmount > .005 && !(btcPurchase.isSuccess || !!draft.purchaseResult) ? "Převody potvrzeny. Stav nákupu BTC sledujte v kartě Bitcoin." : "Zpracování příjmu dokončeno."}</span></div>}
     {processing && btcSent && cashStep === "complete" && (vwceAmount <= .005 || vwceDone) && <section className="income-run-summary" aria-label="Souhrn příjmu">
       <h2>Souhrn příjmu</h2><dl>
