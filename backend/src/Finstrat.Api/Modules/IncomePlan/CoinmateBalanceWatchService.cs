@@ -21,6 +21,9 @@ public sealed class CoinmateBalanceWatchService(
         return new(response.WatchId, response.Currency, response.InitialBalance, response.ExpiresInSeconds);
     }
 
+    public async Task<decimal> GetCzkBalanceAsync(CancellationToken cancellationToken) =>
+        await SendAsync<decimal>(HttpMethod.Get, "current_balance/czk", StandardTimeout, cancellationToken);
+
     public async Task<CoinmateBalanceWatchPingResponse> PingAsync(
         Guid watchId,
         CancellationToken cancellationToken)

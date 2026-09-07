@@ -29,6 +29,11 @@ describe('BitcoinPage', () => {
               quantityBtc: 0, costBasisCzk: 0, costBasisComplete: true,
               lotCount: 0, disposalCount: 0, proofCount: 0, latestActivityAt: null,
               isOwnedByCurrentUser: false, canManage: true, canShareWithDefault: false, isSharedWithDefault: true, proofs: [],
+            }, {
+              id: 'coinmate-account', name: 'Coinmate', description: 'Burza', ownerDisplayName: 'Samuel',
+              quantityBtc: 0, costBasisCzk: 0, costBasisComplete: true,
+              lotCount: 0, disposalCount: 0, proofCount: 0, latestActivityAt: null,
+              isOwnedByCurrentUser: true, canManage: true, canShareWithDefault: true, isSharedWithDefault: false, proofs: [],
             }],
             recentMovements: [{
               id: 'lot-1', accountId: 'account-1', accountName: 'Trezor', type: 'purchase',
@@ -70,6 +75,9 @@ describe('BitcoinPage', () => {
         }] } as Response
       }
       if (url.endsWith('/accounts/account-2/movements')) return { ok: true, status: 200, json: async () => [] } as Response
+      if (url.endsWith('/accounts/coinmate-account/movements')) return { ok: true, status: 200, json: async () => [] } as Response
+      if (url.endsWith('/income-plan/coinmate-czk-balance')) return { ok: true, status: 200, json: async () => ({ balanceCzk: 600 }) } as Response
+      if (url.endsWith('/income-plan/coinmate-bitcoin-purchase')) return { ok: true, status: 200, json: async () => ({ success: true, btcBought: 0.0003, status: 'filled', pending: false }) } as Response
       if (url.endsWith('/bitcoin/transfers')) {
         return { ok: true, status: 201, json: async () => ({ id: 'transfer-1' }) } as Response
       }
@@ -249,5 +257,31 @@ describe('BitcoinPage', () => {
     const purchase = vi.mocked(fetch).mock.calls.find(([input, options]) => String(input).endsWith('/bitcoin/purchases') && options?.method === 'POST')
     expect(purchase).toBeDefined()
     expect(JSON.parse(String((purchase![1] as RequestInit).body))).toMatchObject({ quantityBtc: '0.01', unitPriceCzk: '1000000.00' })
+  })
+
+  it('buys through the API only from the Coinmate account and records the returned BTC', async () => {
+    const user = userEvent.setup()
+    const router = createTestRouter('/bitcoin')
+    await router.load()
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RouterProvider router={router} /></QueryClientProvider>)
+
+    const trezor = (await screen.findByRole('button', { name: 'Trezor' })).closest('details') as HTMLElement
+    await user.click(within(trezor).getByText('Cold storage'))
+    expect(within(trezor).queryByRole('button', { name: 'API nákup' })).not.toBeInTheDocument()
+
+    const coinmate = screen.getByRole('button', { name: 'Coinmate' }).closest('details') as HTMLElement
+    await user.click(within(coinmate).getByText('Burza'))
+    await user.click(within(coinmate).getByRole('button', { name: 'API nákup' }))
+    const dialog = screen.getByRole('dialog', { name: 'API nákup' })
+    expect(await within(dialog).findByText(/600[  ]Kč/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Koupit za vše' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'API nákup' })).not.toBeInTheDocument())
+    const trade = vi.mocked(fetch).mock.calls.find(([input, options]) => String(input).endsWith('/income-plan/coinmate-bitcoin-purchase') && options?.method === 'POST')
+    expect(JSON.parse(String(trade?.[1]?.body))).toEqual({ amountCzk: '600.00' })
+    const ledger = vi.mocked(fetch).mock.calls.find(([input, options]) => String(input).endsWith('/bitcoin/purchases') && options?.method === 'POST')
+    const tradeHeaders = trade?.[1]?.headers as Record<string, string>
+    expect(ledger?.[1]?.headers).toMatchObject({ 'Idempotency-Key': tradeHeaders['Idempotency-Key'] })
+    expect(JSON.parse(String(ledger?.[1]?.body))).toMatchObject({ accountId: 'coinmate-account', quantityBtc: '0.00030000', unitPriceCzk: '2000000.00', note: 'API nákup na Coinmate' })
   })
 })

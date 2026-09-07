@@ -276,6 +276,49 @@
   background: rgba(169, 101, 51, 0.065);
 }
 
+.account-tool--api-purchase {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-surface));
+}
+
+.coinmate-api-balance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-surface);
+}
+
+.coinmate-api-balance span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.coinmate-api-balance strong {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.coinmate-api-balance button {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-sub);
+  background: transparent;
+  cursor: pointer;
+}
+
+.coinmate-api-actions {
+  flex-wrap: wrap;
+}
+
 .account-expanded-action {
   width: 34px;
   height: 34px;

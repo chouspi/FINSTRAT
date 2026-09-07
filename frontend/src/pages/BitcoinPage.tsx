@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { Archive, ArrowDownLeft, ArrowLeft, ArrowLeftRight, ArrowUpRight, Bitcoin, ChevronDown, Copy, Download, FileCheck2, Pencil, Plus, Trash2, UserRound, WalletCards, X } from 'lucide-react'
+import { Archive, ArrowDownLeft, ArrowLeft, ArrowLeftRight, ArrowUpRight, Bitcoin, ChevronDown, Copy, Download, FileCheck2, Pencil, Plus, Trash2, UserRound, WalletCards, X, Zap } from 'lucide-react'
 import { antiforgeryToken, apiRequest } from '../lib/api'
 import { notifyDataChanged } from '../lib/dataRefresh'
 import { createUuid } from '../lib/uuid'
@@ -75,6 +75,8 @@ type BitcoinMovement = {
 }
 
 type BtcPrice = { priceCzk: number; isStale: boolean }
+type CoinmateBalance = { balanceCzk: number }
+type CoinmatePurchaseResult = { success: boolean; btcBought: number; status: string; pending: boolean }
 
 const expenseCategories = [
   { value: 'auto', label: 'auto' },
@@ -108,7 +110,7 @@ export function BitcoinPage() {
   const { dialog } = useSearch({ from: '/bitcoin' })
   const [ownerMenuAccountId, setOwnerMenuAccountId] = useState<string | null>(null)
   const [proofAccount, setProofAccount] = useState<BitcoinAccount | null>(null)
-  const [accountAction, setAccountAction] = useState<{ account: BitcoinAccount; type: 'purchase' | 'withdrawal' } | null>(null)
+  const [accountAction, setAccountAction] = useState<{ account: BitcoinAccount; type: 'purchase' | 'api-purchase' | 'withdrawal' } | null>(null)
   const [accountToEdit, setAccountToEdit] = useState<BitcoinAccount | null>(null)
   const [accountToDelete, setAccountToDelete] = useState<BitcoinAccount | null>(null)
   const [copiedAccountId, setCopiedAccountId] = useState<string | null>(null)
@@ -289,6 +291,9 @@ export function BitcoinPage() {
                     <button className="account-tool account-tool--withdrawal" type="button" disabled={!account.canManage} onClick={() => setAccountAction({ account, type: 'withdrawal' })}>
                       <ArrowUpRight size={14} /> Výběr
                     </button>
+                    {account.isOwnedByCurrentUser && account.canManage && account.name.trim().toLocaleLowerCase('cs-CZ') === 'coinmate' && <button className="account-tool account-tool--api-purchase" type="button" onClick={() => setAccountAction({ account, type: 'api-purchase' })}>
+                      <Zap size={14} /> API nákup
+                    </button>}
                     <button className="account-tool account-tool--purchase" type="button" disabled={!account.canManage} onClick={() => setAccountAction({ account, type: 'purchase' })}>
                       <Plus size={14} /> Přidat nákup
                     </button>
@@ -341,6 +346,7 @@ export function BitcoinPage() {
           onClose={() => setAccountAction(null)}
         />
       )}
+      {accountAction?.type === 'api-purchase' && <CoinmateApiPurchaseDialog account={accountAction.account} onClose={() => setAccountAction(null)} />}
       {accountAction?.type === 'withdrawal' && <WithdrawalDialog account={accountAction.account} priceCzk={priceCzk} onClose={() => setAccountAction(null)} />}
       {proofAccount && <ProofsDialog account={proofAccount} onClose={() => setProofAccount(null)} />}
       {accountToEdit && <EditAccountDialog account={accountToEdit} onClose={() => setAccountToEdit(null)} />}
@@ -842,6 +848,70 @@ function PurchaseDialog({
       </form>
     </DialogFrame>
   )
+}
+
+function CoinmateApiPurchaseDialog({ account, onClose }: { account: BitcoinAccount; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const idempotencyKey = useRef(createUuid())
+  const acquiredAt = useRef(new Date().toISOString())
+  const [amountCzk, setAmountCzk] = useState('')
+  const balance = useQuery({
+    queryKey: ['coinmate', 'czk-balance'],
+    queryFn: () => apiRequest<CoinmateBalance>('/api/income-plan/coinmate-czk-balance'),
+    retry: false,
+  })
+  const availableCzk = balance.data?.balanceCzk
+  const buy = useMutation({
+    mutationFn: async (requestedAmount: number) => {
+      if (!(requestedAmount > 0) || Math.abs(Math.round(requestedAmount * 100) - requestedAmount * 100) > 0.000001) {
+        throw new Error('Zadejte kladnou částku nejvýše na dvě desetinná místa.')
+      }
+      if (availableCzk !== undefined && requestedAmount > availableCzk + 0.001) {
+        throw new Error('Částka je vyšší než dostupný CZK zůstatek.')
+      }
+      const csrf = await antiforgeryToken()
+      let trade = await apiRequest<CoinmatePurchaseResult>('/api/income-plan/coinmate-bitcoin-purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'Idempotency-Key': idempotencyKey.current },
+        body: JSON.stringify({ amountCzk: requestedAmount.toFixed(2) }),
+      })
+      while (trade.pending) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2_000))
+        trade = await apiRequest<CoinmatePurchaseResult>(`/api/income-plan/coinmate-bitcoin-purchase/${idempotencyKey.current}`)
+      }
+      if (!trade.success || trade.btcBought <= 0) throw new Error(`Coinmate nákup skončil stavem ${trade.status}.`)
+
+      const token = await antiforgeryToken()
+      await apiRequest('/api/bitcoin/purchases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token, 'Idempotency-Key': idempotencyKey.current },
+        body: JSON.stringify({
+          accountId: account.id,
+          quantityBtc: trade.btcBought.toFixed(8),
+          unitPriceCzk: (requestedAmount / trade.btcBought).toFixed(2),
+          acquiredAt: acquiredAt.current,
+          txid: null,
+          note: 'API nákup na Coinmate',
+        }),
+      })
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['bitcoin'] })
+      notifyDataChanged()
+      onClose()
+    },
+  })
+  const parsedAmount = parseDecimal(amountCzk)
+  const allCzk = availableCzk === undefined ? 0 : Math.floor(availableCzk * 100) / 100
+
+  return <DialogFrame title="API nákup" kicker="COINMATE" onClose={buy.isPending ? () => undefined : onClose}>
+    <form className="bitcoin-form coinmate-api-form" onSubmit={(event) => { event.preventDefault(); buy.mutate(parsedAmount) }}>
+      <div className="coinmate-api-balance"><span>Aktuální CZK zůstatek</span>{balance.isPending ? <strong>Načítám…</strong> : balance.isError ? <><strong>Nelze načíst</strong><button type="button" onClick={() => void balance.refetch()}>Zkusit znovu</button></> : <strong>{czkFormatter.format(availableCzk ?? 0)}</strong>}</div>
+      <label>Za kolik koupit (Kč)<input autoFocus inputMode="decimal" placeholder="0,00" value={amountCzk} onChange={(event) => setAmountCzk(event.target.value)} required /></label>
+      {buy.error && <p className="form-error" role="alert">{buy.error.message}</p>}
+      <div className="dialog-actions coinmate-api-actions"><button type="button" disabled={buy.isPending} onClick={onClose}>Zrušit</button><button type="button" disabled={buy.isPending || balance.isPending || balance.isError || allCzk <= 0} onClick={() => { setAmountCzk(allCzk.toFixed(2)); buy.mutate(allCzk) }}>Koupit za vše</button><button className="dialog-primary" type="submit" disabled={buy.isPending || balance.isPending || balance.isError || !(parsedAmount > 0)}><Zap size={15} /> {buy.isPending ? 'Nakupuji…' : 'Koupit'}</button></div>
+    </form>
+  </DialogFrame>
 }
 
 function WithdrawalDialog({ account, priceCzk, onClose }: { account: BitcoinAccount; priceCzk: number | undefined; onClose: () => void }) {

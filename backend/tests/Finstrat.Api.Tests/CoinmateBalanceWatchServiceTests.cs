@@ -45,6 +45,20 @@ public sealed class CoinmateBalanceWatchServiceTests
     }
 
     [Fact]
+    public async Task Current_czk_balance_maps_numeric_controller_response()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, "654.01");
+        var service = CreateService(handler, "test-token");
+
+        var result = await service.GetCzkBalanceAsync(CancellationToken.None);
+
+        Assert.Equal(HttpMethod.Get, handler.Method);
+        Assert.Equal("https://controller.test/root/current_balance/czk", handler.RequestUri?.ToString());
+        Assert.Equal("Bearer", handler.AuthorizationScheme);
+        Assert.Equal(654.01m, result);
+    }
+
+    [Fact]
     public async Task Missing_token_is_unavailable_without_sending_request()
     {
         var handler = new StubHandler(HttpStatusCode.OK, "{}");

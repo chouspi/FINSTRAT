@@ -67,6 +67,13 @@ public static class IncomePlanEndpoints
             catch (CoinmateBalanceWatchNotFoundException) { return Unavailable(); }
             catch (CoinmateBalanceWatchUnavailableException) { return Unavailable(); }
         }).AddEndpointFilter<AntiforgeryEndpointFilter>();
+        group.MapGet("/coinmate-czk-balance", async (
+            CoinmateBalanceWatchService service, CancellationToken cancellationToken) =>
+        {
+            try { return Results.Ok(new CoinmateCzkBalanceResponse(await service.GetCzkBalanceAsync(cancellationToken))); }
+            catch (CoinmateBalanceWatchNotFoundException) { return Unavailable(); }
+            catch (CoinmateBalanceWatchUnavailableException) { return Unavailable(); }
+        });
         group.MapPost("/coinmate-balance-watch/{watchId:guid}/ping", async (Guid watchId,
             CoinmateBalanceWatchService service, CancellationToken cancellationToken) =>
         {
@@ -138,3 +145,4 @@ public static class IncomePlanEndpoints
 }
 
 public sealed record CoinmateBitcoinPurchaseRequest(string AmountCzk);
+public sealed record CoinmateCzkBalanceResponse(decimal BalanceCzk);
