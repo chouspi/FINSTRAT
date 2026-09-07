@@ -79,3 +79,60 @@
 .income-debts .income-remainder{min-height:46px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;margin:0;padding:10px 16px;border:0;border-top:1px solid color-mix(in srgb,var(--accent) 22%,var(--border));border-radius:0;color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,transparent);font-size:9px}.income-debts .income-remainder span{color:var(--text-muted)}.income-debts .income-remainder strong{font-size:12px;font-variant-numeric:tabular-nums}
 @container(max-width:760px){.income-debts .income-debt-row{grid-template-columns:52px minmax(0,1fr) auto}.income-debt-priority{grid-row:1/3}.income-debt-coverage{grid-column:2/-1}.income-debt-row-value{grid-column:3;grid-row:1;padding-left:14px}.income-debt-heading-copy>div>span{max-width:360px}}
 @container(max-width:560px){.income-debts{margin:16px}.income-debt-panel{border-radius:15px}.income-debts .income-section-heading{align-items:stretch;flex-direction:column;padding:17px}.income-debt-budget{width:100%;box-sizing:border-box}.income-debts .income-debt-list{padding:9px}.income-debts .income-debt-row{grid-template-columns:44px minmax(0,1fr);gap:10px;padding:11px}.income-debt-priority{grid-row:1/3;width:40px;height:40px}.income-debt-row-copy{grid-column:2}.income-debt-row-value{grid-column:2;grid-row:2;align-items:flex-start;padding:0;border:0}.income-debt-row-value span{display:none}.income-debt-coverage{grid-column:1/-1}.income-debts .income-remainder{grid-template-columns:auto 1fr}.income-debts .income-remainder strong{grid-column:2}}
+
+/* Income plan: compact layout and readable action states. */
+.income-page{background:var(--bg-app)}
+.income-hero{grid-template-columns:minmax(240px,280px) minmax(0,1fr);align-items:center}
+.income-capital{min-height:210px;padding:24px;border-color:var(--border-sub);border-radius:14px;background:var(--bg-panel);box-shadow:none}
+.income-capital:before,.income-flow-row:after{display:none}
+.income-capital-main>p{font-size:12px;letter-spacing:.08em;top:calc(50% - 56px)}
+.income-capital-main input{width:min(200px,75%);font-size:34px}
+.income-capital-main label>span{left:calc(50% + 104px);font-size:14px}
+.income-deferred-balance{font-size:12px;padding:6px 8px;max-width:calc(100% - 16px);gap:5px}
+.income-deferred-balance button{width:32px;height:32px;flex-shrink:0}
+.income-distribution-row{grid-template-columns:86px minmax(0,1fr);height:auto;min-height:96px;flex:0 0 auto}
+.income-flow-row{border-radius:12px;border-color:var(--border-sub);background:var(--bg-panel);box-shadow:none;gap:12px}
+.income-envelope-copy>strong{font-size:15px}
+.income-envelope-copy>span{font-size:12px;white-space:normal;line-height:1.45}
+.income-envelope-value{min-width:130px;padding-left:12px}
+.income-envelope-value output{font-size:24px}
+.income-vault-branch b,.income-envelope-value>b{font-size:12px}
+.income-vault-branch b{right:0;min-width:48px;box-shadow:none}
+.income-debt-split em,.income-debt-split b{font-size:12px}
+.income-debt-split>span{padding:4px 6px}
+.income-debt-panel{border-color:var(--border-sub);border-radius:14px;background:var(--bg-panel);box-shadow:none}
+.income-debts .income-section-heading{background:transparent}
+.income-debt-heading-copy>div>span,.income-debt-budget>small,.income-debt-row-copy span,.income-debt-row-copy em,.income-debt-coverage span,.income-debt-coverage b,.income-debt-row-value span,.income-footnote{font-size:12px;line-height:1.45}
+.income-debt-budget>span,.income-debt-heading-copy p{font-size:11px;letter-spacing:.06em}
+.income-debt-priority span{font-size:9px;letter-spacing:0}
+.income-debt-row-copy strong{font-size:14px}
+.income-debts .income-debt-row{background:var(--bg-surface);border-radius:8px}
+.income-debt-row-value output{font-size:18px}
+.income-debt-row--excluded{opacity:.8}
+.income-debt-workflow{grid-template-columns:minmax(0,1fr) auto minmax(170px,220px)}
+.income-debt-processed,.income-debt-defer,.income-coinmate-sent,.income-cash-qr button{font-size:13px;min-height:44px}
+.income-btc-watch,.income-btc-watch button,.income-workflow-error,.income-error,.income-debt-progress{font-size:12px}
+.income-page button:focus-visible,.income-page input:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.income-workflow-progress{display:flex;gap:12px;margin:0;padding:20px var(--page-pad) 0;list-style:none}
+.income-workflow-progress li{flex:1;display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-panel)}
+.income-workflow-number{width:28px;height:28px;flex-shrink:0;display:grid;place-items:center;border:1px solid var(--border-sub);border-radius:50%;font-size:12px;color:var(--text-sub)}
+.income-workflow-progress li>div{display:flex;flex-direction:column;gap:4px}
+.income-workflow-progress strong{font-size:13px}
+.income-workflow-progress li>div>span{font-size:12px;color:var(--text-sub)}
+.income-workflow-progress .is-complete .income-workflow-number{color:var(--green);border-color:var(--green)}
+.income-completion{display:flex;align-items:center;gap:10px;margin:16px var(--page-pad) 0;padding:14px;border:1px solid var(--border);border-radius:10px;color:var(--green);font-size:13px;line-height:1.5}
+.income-completion svg{flex-shrink:0}
+@container(min-width:841px){.income-distribution{min-height:0}}
+@container(max-width:840px){.income-hero{grid-template-columns:1fr}.income-capital{min-height:160px}.income-distribution{padding-top:8px}.income-vault-feed{display:none}.income-distribution-row{height:auto;min-height:96px}.income-flow-row{min-height:96px}}
+@container(max-width:560px){.income-hero{padding:16px}.income-capital{min-height:150px}.income-flow-row{grid-template-columns:32px minmax(0,1fr);gap:10px;padding:16px}.income-flow-icon{width:32px;height:32px}.income-envelope-value{grid-column:2;min-width:0;padding:0;border:0;flex-direction:row;justify-content:space-between;align-items:center}.income-envelope-value output{grid-column:auto;grid-row:auto;font-size:23px;text-align:left}.income-debt-workflow{grid-template-columns:auto minmax(0,1fr)}.income-debt-current{grid-column:1/-1}.income-workflow-progress{gap:6px;padding:16px 16px 0}.income-workflow-progress li{padding:10px 8px;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}.income-workflow-progress li>div>span{font-size:11px}.income-completion{margin:12px 16px 0}.income-debt-coverage>div:first-child{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){.income-page *,.income-page *:before,.income-page *:after{animation:none!important;transition:none!important}}
+.income-run-summary{margin:16px var(--page-pad);padding:20px;border:1px solid var(--border-sub);border-radius:12px;background:var(--bg-panel)}
+.income-run-summary h2{margin:0 0 16px;font-size:16px}
+.income-run-summary dl{margin:0 0 18px}
+.income-run-summary dl>div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
+.income-run-summary dt{color:var(--text-sub)}
+.income-run-summary dd{margin:0;white-space:nowrap;font-weight:650;font-variant-numeric:tabular-nums}
+.income-run-summary>button{width:auto;padding:0 18px}
+.income-run-summary>button:disabled{opacity:.5;cursor:not-allowed}
+.income-workflow-progress{flex-wrap:wrap}
+@container(max-width:560px){.income-run-summary{margin:16px;padding:16px}.income-workflow-progress li{flex-basis:calc(50% - 6px)}.income-run-summary dl>div{flex-wrap:wrap;gap:6px}}

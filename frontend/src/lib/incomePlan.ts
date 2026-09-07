@@ -29,9 +29,9 @@ export function createCoinmatePaymentPayload(amountCzk: number, iban: string, va
 export function createCashPaymentPayload(amountCzk: number, iban: string) {
   if (!Number.isFinite(amountCzk) || amountCzk <= 0) throw new Error('Částka QR platby musí být kladná.')
   const compactIban = iban.replace(/\s/g, '').toUpperCase()
-  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(compactIban)) throw new Error('IBAN pro Cash QR není platný.')
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(compactIban)) throw new Error('IBAN pro Spending QR není platný.')
   const amount = (Math.round(amountCzk * 100) / 100).toFixed(2)
-  return `SPD*1.0*ACC:${compactIban}*AM:${amount}*CC:CZK*MSG:Cash rezerva*`
+  return `SPD*1.0*ACC:${compactIban}*AM:${amount}*CC:CZK*MSG:Spending ucet*`
 }
 
 export function formatCzkInput(value: string) {

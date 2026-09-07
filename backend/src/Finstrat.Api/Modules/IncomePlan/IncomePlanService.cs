@@ -1,6 +1,8 @@
 using System.Data;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
+using System.Security.Cryptography;
 using Finstrat.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -101,13 +103,33 @@ public sealed class IncomePlanService(ApplicationDbContext dbContext)
 
     public async Task<DeferredDebtPaymentResponse> AdjustDeferredDebtPaymentAsync(
         Guid householdId, Guid userId, AdjustDeferredDebtPaymentRequest request, bool add,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Guid? idempotencyKey = null)
     {
         var amount = ParseCapital(request.AmountCzk);
         var expected = ParseCapital(request.ExpectedDeferredDebtPaymentCzk);
         if (amount <= 0) throw new IncomePlanValidationException("Odložená splátka musí být kladná.");
         var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
         if (connection.State != ConnectionState.Open) await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        if (idempotencyKey is Guid key)
+        {
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                JsonSerializer.Serialize(new { operation = "income-deferred-adjust", userId, add, amount, expected }))));
+            await using var insert = new NpgsqlCommand("INSERT INTO idempotency_keys (household_id,key,request_hash,expires_at) VALUES (@h,@k,@r,now()+interval '24 hours') ON CONFLICT DO NOTHING", connection, transaction);
+            insert.Parameters.AddWithValue("h", householdId);
+            insert.Parameters.AddWithValue("k", key);
+            insert.Parameters.AddWithValue("r", hash);
+            if (await insert.ExecuteNonQueryAsync(cancellationToken) == 0)
+            {
+                await using var select = new NpgsqlCommand("SELECT request_hash,response_body FROM idempotency_keys WHERE household_id=@h AND key=@k", connection, transaction);
+                select.Parameters.AddWithValue("h", householdId);
+                select.Parameters.AddWithValue("k", key);
+                await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken) || reader.GetString(0) != hash || reader.IsDBNull(1))
+                    throw new IncomePlanValidationException("Idempotency key už byl použit pro jiný požadavek.");
+                return JsonSerializer.Deserialize<DeferredDebtPaymentResponse>(reader.GetString(1))!;
+            }
+        }
         var sql = add ? """
             WITH adjusted AS (
               INSERT INTO income_plan_settings (household_id, user_id, deferred_debt_payment_czk)
@@ -137,14 +159,24 @@ public sealed class IncomePlanService(ApplicationDbContext dbContext)
               FROM adjusted
             ) SELECT deferred_debt_payment_czk FROM adjusted
             """;
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("household_id", householdId);
         command.Parameters.AddWithValue("user_id", userId);
         command.Parameters.AddWithValue("amount", amount);
         command.Parameters.AddWithValue("expected", expected);
         if (await command.ExecuteScalarAsync(cancellationToken) is not decimal deferred)
             throw new IncomePlanValidationException("Odložená částka se mezitím změnila. Obnovte data a zkuste to znovu.");
-        return new DeferredDebtPaymentResponse(deferred);
+        var response = new DeferredDebtPaymentResponse(deferred);
+        if (idempotencyKey is Guid completedKey)
+        {
+            await using var complete = new NpgsqlCommand("UPDATE idempotency_keys SET response_status=200,response_body=@body WHERE household_id=@h AND key=@k", connection, transaction);
+            complete.Parameters.AddWithValue("h", householdId);
+            complete.Parameters.AddWithValue("k", completedKey);
+            complete.Parameters.AddWithValue("body", NpgsqlDbType.Jsonb, JsonSerializer.Serialize(response));
+            await complete.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return response;
     }
 
     public async Task DeleteDeferredDebtPaymentAsync(

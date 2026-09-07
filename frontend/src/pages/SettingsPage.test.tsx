@@ -31,7 +31,7 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('Pravidla rozdělení příjmu')).toBeInTheDocument()
     expect(screen.getByLabelText('Bez spotřebitelských dluhů BTC')).toHaveValue(85)
     expect(screen.getByLabelText('S aktivními dluhy Dluhy')).toHaveValue(25)
-    const iban = screen.getByLabelText('Cash účet (IBAN)')
+    const iban = screen.getByLabelText('Spending účet (IBAN)')
     expect(iban).toHaveValue('CZ6508000000192000145399')
     await user.clear(iban)
     await user.type(iban, 'CZ12 3456 7890 1234 5678 9012')

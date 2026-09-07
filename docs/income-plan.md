@@ -15,7 +15,7 @@ rezimu musi byt presne 100.
 
 Prihlaseny uzivatel muze z hlavicky otevrit workflow `Zpracovat prijem`. Wizard
 odpovida legacy rozlozeni: ukaze barevny rozpad, samostatny modal pro zapis BTC
-nakupu, hromadny zapis navrzenych splatek a informativni cash rezervu. V
+nakupu, hromadny zapis navrzenych splatek a převod na Spending účet. V
 defaultnim rezimu neni akce dostupna.
 
 Splátku lze ve wizardu odlozit. `POST /api/income-plan/deferred-debt-payment`
@@ -39,6 +39,22 @@ Pokud planovane splatky existuji, hlavni karta Dluhy zobrazi zvlast pravidelnou
 rezervu a zvlast vypoctene predcasne splatky. Bez planovanych splatek zustava
 puvodni jednoradkove zobrazeni.
 
-Cash krok ve workflow umi lokalne vygenerovat ceskou QR Platbu. Pouziva ucet
-dekodovany z dodanych vzoru, vypoctenou Cash castku, menu CZK a aktualni datum;
+Spending krok ve workflow umi lokalne vygenerovat ceskou QR Platbu. Pouziva ucet
+dekodovany z dodanych vzoru, vypočtenou částku na běžné výdaje, menu CZK a aktualni datum;
 SPD payload ani bankovni udaje se neposilaji externi QR sluzbe.
+
+Spending účet slouží k běžným výdajům. Po potvrzení odeslání vkladu na Coinmate se uzamkne kapitál i podklady celého rozpracovaného plánu; před potvrzením se částky průběžně přepočítávají.
+
+Rozpracovaný příjem se ukládá do sessionStorage pod klíčem domácnosti a uživatele.
+Refresh nebo návrat do workflow ve stejném panelu obnoví původní částky, provedené
+kroky, sledování Coinmate a idempotency klíče. Dokončený běh zůstává dostupný se
+souhrnem až do akce Nový příjem. Zavření panelu či vymazání úložiště není trvalá
+historie příjmů a obnova mezi zařízeními není podporována.
+
+Nulové BTC, předčasné splátky a Spending se přeskakují. VWCE krok pouze potvrzuje
+vyčlenění peněz; skutečný nákup a čerpání poolu zůstávají v tabu VWCE. Souhrn tyto
+částky označuje jako vyčleněné, nikoli nakoupené.
+
+Úpravy odložených splátek přijímají volitelný Idempotency-Key. Klient jej ukládá
+před odesláním. Opakování stejné operace vrací původní výsledek atomicky uložený
+s úpravou zůstatku; stejný klíč s jinými parametry server odmítne.

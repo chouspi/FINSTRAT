@@ -68,11 +68,11 @@ function IncomeAllocationSettings({ initial }: { initial: IncomeSettings }) {
   return <div className="settings-pane">
     <SettingsHeading eyebrow="INCOME PLÁN" title="Pravidla rozdělení příjmu" description="Procenta se automaticky použijí podle toho, zda máte aktivní spotřebitelský dluh." valid={valid} save={save} />
     <div className="settings-profiles">
-      <AllocationProfile title="Bez spotřebitelských dluhů" fields={[["BTC", 'withoutDebtBtcPercent'], ["Cash", 'withoutDebtCashPercent']]} settings={settings} onChange={setSettings} />
-      <AllocationProfile title="S aktivními dluhy" fields={[["BTC", 'withDebtBtcPercent'], ["Dluhy", 'withDebtDebtPercent'], ["Cash", 'withDebtCashPercent']]} settings={settings} onChange={setSettings} />
+      <AllocationProfile title="Bez spotřebitelských dluhů" fields={[["BTC", 'withoutDebtBtcPercent'], ["Spending", 'withoutDebtCashPercent']]} settings={settings} onChange={setSettings} />
+      <AllocationProfile title="S aktivními dluhy" fields={[["BTC", 'withDebtBtcPercent'], ["Dluhy", 'withDebtDebtPercent'], ["Spending", 'withDebtCashPercent']]} settings={settings} onChange={setSettings} />
       <section className="settings-cash-account">
-        <div><strong>Cash účet (IBAN)</strong><small>Použije se pro QR převod do Cash obálky. Pole může zůstat prázdné.</small></div>
-        <input aria-label="Cash účet (IBAN)" type="text" autoComplete="off" placeholder="CZ00 0000 0000 0000 0000 0000" value={settings.cashAccountIban ?? ''} onChange={(event) => setSettings({ ...settings, cashAccountIban: event.target.value || null })} />
+        <div><strong>Spending účet (IBAN)</strong><small>Použije se pro QR převod na Spending účet. Pole může zůstat prázdné.</small></div>
+        <input aria-label="Spending účet (IBAN)" type="text" autoComplete="off" placeholder="CZ00 0000 0000 0000 0000 0000" value={settings.cashAccountIban ?? ''} onChange={(event) => setSettings({ ...settings, cashAccountIban: event.target.value || null })} />
       </section>
       <section className={`settings-coinmate-payment${coinmateUnlocked ? ' unlocked' : ' locked'}`}>
         <div className="settings-coinmate-heading">

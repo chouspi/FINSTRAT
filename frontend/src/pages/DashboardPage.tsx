@@ -128,11 +128,11 @@ function IncomePlanCard({ data, onClick }: { data?: IncomeOverview; onClick: () 
     ? [
         { label: 'BTC', percent: settings?.withDebtBtcPercent ?? 0, tone: 'btc' },
         { label: 'Dluhy', percent: settings?.withDebtDebtPercent ?? 0, tone: 'debt' },
-        { label: 'Cash', percent: settings?.withDebtCashPercent ?? 0, tone: 'cash' },
+        { label: 'Spending', percent: settings?.withDebtCashPercent ?? 0, tone: 'cash' },
       ]
     : [
         { label: 'BTC', percent: settings?.withoutDebtBtcPercent ?? 0, tone: 'btc' },
-        { label: 'Cash', percent: settings?.withoutDebtCashPercent ?? 0, tone: 'cash' },
+        { label: 'Spending', percent: settings?.withoutDebtCashPercent ?? 0, tone: 'cash' },
       ]
   const totalDebt = debts.reduce((sum, debt) => sum + debt.balanceCzk, 0)
   return <button className="dashboard-card dashboard-income-card" type="button" aria-label="Otevřít Income plán" onClick={onClick}>

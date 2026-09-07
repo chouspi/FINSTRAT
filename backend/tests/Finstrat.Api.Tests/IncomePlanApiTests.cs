@@ -223,6 +223,33 @@ public sealed class IncomePlanApiTests(IdentityApiFixture fixture)
         Assert.Equal(0m, overview.GetProperty("settings").GetProperty("deferredDebtPaymentCzk").GetDecimal());
     }
 
+    [Fact]
+    public async Task Deferred_adjustments_replay_after_lost_response_without_changing_balance_twice()
+    {
+        using var client = fixture.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { HandleCookies = true });
+        var token = (await client.GetFromJsonAsync<JsonElement>("/api/identity/antiforgery")).GetProperty("token").GetString()!;
+        async Task<HttpResponseMessage> Adjust(string path, string amount, string expected, Guid key)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(new { amountCzk = amount, expectedDeferredDebtPaymentCzk = expected }) };
+            request.Headers.Add("X-CSRF-TOKEN", token);
+            request.Headers.Add("Idempotency-Key", key.ToString());
+            return await client.SendAsync(request);
+        }
+        var overview = await client.GetFromJsonAsync<JsonElement>("/api/income-plan/overview");
+        var original = overview.GetProperty("settings").GetProperty("deferredDebtPaymentCzk").GetDecimal();
+        var expected = original.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var addKey = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.OK, (await Adjust("/api/income-plan/deferred-debt-payment", "200", expected, addKey)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Adjust("/api/income-plan/deferred-debt-payment", "200", expected, addKey)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Adjust("/api/income-plan/deferred-debt-payment", "201", expected, addKey)).StatusCode);
+        var consumeKey = Guid.NewGuid();
+        var afterAdd = (original + 200).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(HttpStatusCode.OK, (await Adjust("/api/income-plan/deferred-debt-payment/consume", "200", afterAdd, consumeKey)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Adjust("/api/income-plan/deferred-debt-payment/consume", "200", afterAdd, consumeKey)).StatusCode);
+        overview = await client.GetFromJsonAsync<JsonElement>("/api/income-plan/overview");
+        Assert.Equal(original, overview.GetProperty("settings").GetProperty("deferredDebtPaymentCzk").GetDecimal());
+    }
+
     private static async Task<HttpResponseMessage> UpdateSettings(
         HttpClient client,
         string? cashAccountIban,

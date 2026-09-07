@@ -31,18 +31,18 @@ public static class IncomePlanEndpoints
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["incomePlan"] = [exception.Message] });
             }
         }).AddEndpointFilter<AntiforgeryEndpointFilter>();
-        group.MapPost("/deferred-debt-payment", async (AdjustDeferredDebtPaymentRequest request,
+        group.MapPost("/deferred-debt-payment", async (AdjustDeferredDebtPaymentRequest request, HttpContext http,
             ClaimsPrincipal principal, UserManager<ApplicationUser> users,
             IncomePlanService service, CancellationToken cancellationToken) =>
         {
-            try { var (household, user) = Context(principal, users); return Results.Ok(await service.AdjustDeferredDebtPaymentAsync(household, user, request, true, cancellationToken)); }
+            try { var (household, user) = Context(principal, users); return Results.Ok(await service.AdjustDeferredDebtPaymentAsync(household, user, request, true, cancellationToken, ReadOptionalKey(http))); }
             catch (IncomePlanValidationException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["incomePlan"] = [exception.Message] }); }
         }).AddEndpointFilter<AntiforgeryEndpointFilter>();
-        group.MapPost("/deferred-debt-payment/consume", async (AdjustDeferredDebtPaymentRequest request,
+        group.MapPost("/deferred-debt-payment/consume", async (AdjustDeferredDebtPaymentRequest request, HttpContext http,
             ClaimsPrincipal principal, UserManager<ApplicationUser> users,
             IncomePlanService service, CancellationToken cancellationToken) =>
         {
-            try { var (household, user) = Context(principal, users); return Results.Ok(await service.AdjustDeferredDebtPaymentAsync(household, user, request, false, cancellationToken)); }
+            try { var (household, user) = Context(principal, users); return Results.Ok(await service.AdjustDeferredDebtPaymentAsync(household, user, request, false, cancellationToken, ReadOptionalKey(http))); }
             catch (IncomePlanValidationException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["incomePlan"] = [exception.Message] }); }
         }).AddEndpointFilter<AntiforgeryEndpointFilter>();
         group.MapDelete("/deferred-debt-payment", async (string expectedDeferredDebtPaymentCzk,
@@ -114,6 +114,13 @@ public static class IncomePlanEndpoints
             catch (CoinmateBalanceWatchUnavailableException) { return PurchaseUnavailable(); }
         });
         return endpoints;
+    }
+
+    private static Guid? ReadOptionalKey(HttpContext http)
+    {
+        if (!http.Request.Headers.TryGetValue("Idempotency-Key", out var value)) return null;
+        if (Guid.TryParse(value, out var key)) return key;
+        throw new IncomePlanValidationException("Idempotency-Key musí být UUID.");
     }
 
     private static IResult Unavailable() => Results.Problem(

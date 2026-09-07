@@ -82,9 +82,9 @@ describe('Coinmate QR payment', () => {
   })
 })
 
-describe('Cash QR payment', () => {
+describe('Spending QR payment', () => {
   it('creates an SPD 1.0 payload for the configured Cash account', () => {
-    expect(createCashPaymentPayload(1500.5, 'CZ65 0800 0000 1920 0014 5399')).toBe('SPD*1.0*ACC:CZ6508000000192000145399*AM:1500.50*CC:CZK*MSG:Cash rezerva*')
+    expect(createCashPaymentPayload(1500.5, 'CZ65 0800 0000 1920 0014 5399')).toBe('SPD*1.0*ACC:CZ6508000000192000145399*AM:1500.50*CC:CZK*MSG:Spending ucet*')
     expect(() => createCashPaymentPayload(100, '  ')).toThrow('IBAN')
   })
 })
