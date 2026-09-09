@@ -31,10 +31,10 @@ kapitalu. Klient vola `DELETE /api/income-plan/deferred-debt-payment` s
 ocekavanou aktualni hodnotou; anonymni defaultni rezim tuto akci nenabizi.
 
 Planovane splatky se rezervuji jen tehdy, kdyz zadany prijem pokryje jejich cely
-soucet. Pri nizsim prijmu se ignoruji. Pri dostatecnem prijmu se rezerva nejprve
-odecte od zakladu a nasledne snizi beznou procentni alokaci do dluhu. Takto
-uvolnena cast se prerozdeli mezi BTC a Cash v jejich vzajemnem pomeru, aby po
-provedeni navrzenych prevodu zustala na uctu presne cela rezerva.
+soucet. Pri nizsim prijmu se ignoruji. Pri dostatecnem prijmu se zapocitaji do
+procentni alokace na dluhy a pouze rozdil do cilove dluhove castky se navrhne jako
+predcasna splatka. Pokud planovane splatky cilovou dluhovou castku prevysi, snizi
+alokaci BTC a Cash v jejich vzajemnem pomeru, aby zustala cela rezerva kryta.
 Pokud planovane splatky existuji, hlavni karta Dluhy zobrazi zvlast pravidelnou
 rezervu a zvlast vypoctene predcasne splatky. Bez planovanych splatek zustava
 puvodni jednoradkove zobrazeni.

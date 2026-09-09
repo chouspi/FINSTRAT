@@ -90,6 +90,7 @@ const expenseCategories = [
 const btcFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 8 })
 const czkFormatter = new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })
 const dateFormatter = new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'short', year: 'numeric' })
+const coinmateBuyFeeRate = 0.006
 
 function proofTemplate(ownerName: string) {
   const today = new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric' }).format(new Date())
@@ -861,13 +862,16 @@ function CoinmateApiPurchaseDialog({ account, onClose }: { account: BitcoinAccou
     retry: false,
   })
   const availableCzk = balance.data?.balanceCzk
+  const allCzk = availableCzk === undefined
+    ? 0
+    : Math.max(0, Math.floor((availableCzk / (1 + coinmateBuyFeeRate) - 0.01) * 100) / 100)
   const buy = useMutation({
     mutationFn: async (requestedAmount: number) => {
       if (!(requestedAmount > 0) || Math.abs(Math.round(requestedAmount * 100) - requestedAmount * 100) > 0.000001) {
         throw new Error('Zadejte kladnou částku nejvýše na dvě desetinná místa.')
       }
-      if (availableCzk !== undefined && requestedAmount > availableCzk + 0.001) {
-        throw new Error('Částka je vyšší než dostupný CZK zůstatek.')
+      if (availableCzk !== undefined && requestedAmount > allCzk + 0.001) {
+        throw new Error(`Kvůli poplatku lze nyní koupit maximálně za ${czkFormatter.format(allCzk)}.`)
       }
       const csrf = await antiforgeryToken()
       let trade = await apiRequest<CoinmatePurchaseResult>('/api/income-plan/coinmate-bitcoin-purchase', {
@@ -879,7 +883,17 @@ function CoinmateApiPurchaseDialog({ account, onClose }: { account: BitcoinAccou
         await new Promise((resolve) => window.setTimeout(resolve, 2_000))
         trade = await apiRequest<CoinmatePurchaseResult>(`/api/income-plan/coinmate-bitcoin-purchase/${idempotencyKey.current}`)
       }
-      if (!trade.success || trade.btcBought <= 0) throw new Error(`Coinmate nákup skončil stavem ${trade.status}.`)
+      if (!trade.success || trade.btcBought <= 0) {
+        if (trade.status.toLocaleLowerCase('cs-CZ') === 'rejected') idempotencyKey.current = createUuid()
+        throw new Error(`Coinmate nákup skončil stavem ${trade.status}.`)
+      }
+
+      let spentCzk = requestedAmount
+      try {
+        const current = await apiRequest<CoinmateBalance>('/api/income-plan/coinmate-czk-balance')
+        const balanceDelta = availableCzk === undefined ? 0 : availableCzk - current.balanceCzk
+        if (balanceDelta > 0) spentCzk = Math.round(balanceDelta * 100) / 100
+      } catch { /* A completed trade must still be recorded when refreshing the balance fails. */ }
 
       const token = await antiforgeryToken()
       await apiRequest('/api/bitcoin/purchases', {
@@ -888,7 +902,7 @@ function CoinmateApiPurchaseDialog({ account, onClose }: { account: BitcoinAccou
         body: JSON.stringify({
           accountId: account.id,
           quantityBtc: trade.btcBought.toFixed(8),
-          unitPriceCzk: (requestedAmount / trade.btcBought).toFixed(2),
+          unitPriceCzk: (spentCzk / trade.btcBought).toFixed(2),
           acquiredAt: acquiredAt.current,
           txid: null,
           note: 'API nákup na Coinmate',
@@ -902,11 +916,11 @@ function CoinmateApiPurchaseDialog({ account, onClose }: { account: BitcoinAccou
     },
   })
   const parsedAmount = parseDecimal(amountCzk)
-  const allCzk = availableCzk === undefined ? 0 : Math.floor(availableCzk * 100) / 100
 
   return <DialogFrame title="API nákup" kicker="COINMATE" onClose={buy.isPending ? () => undefined : onClose}>
     <form className="bitcoin-form coinmate-api-form" onSubmit={(event) => { event.preventDefault(); buy.mutate(parsedAmount) }}>
       <div className="coinmate-api-balance"><span>Aktuální CZK zůstatek</span>{balance.isPending ? <strong>Načítám…</strong> : balance.isError ? <><strong>Nelze načíst</strong><button type="button" onClick={() => void balance.refetch()}>Zkusit znovu</button></> : <strong>{czkFormatter.format(availableCzk ?? 0)}</strong>}</div>
+      {!balance.isPending && !balance.isError && <p className="coinmate-api-fee-note">Koupit za vše ponechá rezervu 0,6 % na poplatek. Maximální objednávka: {czkFormatter.format(allCzk)}.</p>}
       <label>Za kolik koupit (Kč)<input autoFocus inputMode="decimal" placeholder="0,00" value={amountCzk} onChange={(event) => setAmountCzk(event.target.value)} required /></label>
       {buy.error && <p className="form-error" role="alert">{buy.error.message}</p>}
       <div className="dialog-actions coinmate-api-actions"><button type="button" disabled={buy.isPending} onClick={onClose}>Zrušit</button><button type="button" disabled={buy.isPending || balance.isPending || balance.isError || allCzk <= 0} onClick={() => { setAmountCzk(allCzk.toFixed(2)); buy.mutate(allCzk) }}>Koupit za vše</button><button className="dialog-primary" type="submit" disabled={buy.isPending || balance.isPending || balance.isError || !(parsedAmount > 0)}><Zap size={15} /> {buy.isPending ? 'Nakupuji…' : 'Koupit'}</button></div>

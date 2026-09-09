@@ -7,6 +7,7 @@ import { createTestRouter } from '../router'
 
 describe('BitcoinPage', () => {
   beforeEach(() => {
+    let coinmateBalanceReads = 0
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async (input, init) => {
       const url = String(input)
       if (url.endsWith('/bitcoin/overview')) {
@@ -76,7 +77,10 @@ describe('BitcoinPage', () => {
       }
       if (url.endsWith('/accounts/account-2/movements')) return { ok: true, status: 200, json: async () => [] } as Response
       if (url.endsWith('/accounts/coinmate-account/movements')) return { ok: true, status: 200, json: async () => [] } as Response
-      if (url.endsWith('/income-plan/coinmate-czk-balance')) return { ok: true, status: 200, json: async () => ({ balanceCzk: 600 }) } as Response
+      if (url.endsWith('/income-plan/coinmate-czk-balance')) {
+        coinmateBalanceReads += 1
+        return { ok: true, status: 200, json: async () => ({ balanceCzk: coinmateBalanceReads === 1 ? 600 : 0 }) } as Response
+      }
       if (url.endsWith('/income-plan/coinmate-bitcoin-purchase')) return { ok: true, status: 200, json: async () => ({ success: true, btcBought: 0.0003, status: 'filled', pending: false }) } as Response
       if (url.endsWith('/bitcoin/transfers')) {
         return { ok: true, status: 201, json: async () => ({ id: 'transfer-1' }) } as Response
@@ -278,7 +282,7 @@ describe('BitcoinPage', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'API nákup' })).not.toBeInTheDocument())
     const trade = vi.mocked(fetch).mock.calls.find(([input, options]) => String(input).endsWith('/income-plan/coinmate-bitcoin-purchase') && options?.method === 'POST')
-    expect(JSON.parse(String(trade?.[1]?.body))).toEqual({ amountCzk: '600.00' })
+    expect(JSON.parse(String(trade?.[1]?.body))).toEqual({ amountCzk: '596.41' })
     const ledger = vi.mocked(fetch).mock.calls.find(([input, options]) => String(input).endsWith('/bitcoin/purchases') && options?.method === 'POST')
     const tradeHeaders = trade?.[1]?.headers as Record<string, string>
     expect(ledger?.[1]?.headers).toMatchObject({ 'Idempotency-Key': tradeHeaders['Idempotency-Key'] })

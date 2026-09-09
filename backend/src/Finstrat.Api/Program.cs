@@ -80,7 +80,8 @@ builder.Services.AddHttpClient("vwce-price", client =>
 });
 builder.Services.AddHttpClient("coinmate-controller", client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(45);
+    // Balance-watch requests stay open while the browser keeps the controller watch alive.
+    client.Timeout = Timeout.InfiniteTimeSpan;
 });
 builder.Services.AddSingleton<BtcPriceService>();
 builder.Services.AddSingleton<VwcePriceService>();

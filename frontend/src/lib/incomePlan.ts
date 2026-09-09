@@ -91,14 +91,13 @@ export function calculateIncomeAllocation(
   const afterScheduled = Math.max(0, capital - scheduledApplied)
   const deferredApplied = hasDebts ? Math.min(afterScheduled, Math.max(0, deferredDebtPayment)) : 0
   const distributableCapital = afterScheduled - deferredApplied
-  const rawDebtBudget = distributableCapital * debtPercent / 100
-  const scheduledDebtOffset = Math.min(scheduledApplied, rawDebtBudget)
+  const profileCapital = Math.max(0, capital - deferredApplied)
+  const targetDebtBudget = hasDebts ? profileCapital * debtPercent / 100 : 0
   const nonDebtPercent = btcPercent + cashPercent
-  let btcAmount = distributableCapital * btcPercent / 100
-    + (nonDebtPercent > 0 ? scheduledDebtOffset * btcPercent / nonDebtPercent : 0)
-  let cashAmount = distributableCapital * cashPercent / 100
-    + (nonDebtPercent > 0 ? scheduledDebtOffset * cashPercent / nonDebtPercent : 0)
-  let freshDebtBudget = rawDebtBudget - scheduledDebtOffset
+  const nonDebtBudget = Math.max(0, profileCapital - Math.max(targetDebtBudget, scheduledApplied))
+  let btcAmount = nonDebtPercent > 0 ? nonDebtBudget * btcPercent / nonDebtPercent : 0
+  let cashAmount = nonDebtPercent > 0 ? nonDebtBudget * cashPercent / nonDebtPercent : 0
+  let freshDebtBudget = Math.max(0, targetDebtBudget - scheduledApplied)
   let debtBudget = freshDebtBudget + deferredApplied
   if (hasDebts && limits) {
     const earlyPaymentCapacity = Math.max(0, limits.eligibleDebtBalanceCzk - scheduledApplied)

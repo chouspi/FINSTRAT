@@ -113,7 +113,7 @@ public sealed class IncomePlanService(ApplicationDbContext dbContext)
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         if (idempotencyKey is Guid key)
         {
-            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
                 JsonSerializer.Serialize(new { operation = "income-deferred-adjust", userId, add, amount, expected }))));
             await using var insert = new NpgsqlCommand("INSERT INTO idempotency_keys (household_id,key,request_hash,expires_at) VALUES (@h,@k,@r,now()+interval '24 hours') ON CONFLICT DO NOTHING", connection, transaction);
             insert.Parameters.AddWithValue("h", householdId);

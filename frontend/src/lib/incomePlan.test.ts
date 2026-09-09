@@ -40,6 +40,17 @@ describe('calculateIncomeAllocation', () => {
     expect(result.btcAmount + result.debtBudget + result.cashAmount + result.scheduledApplied).toBe(15000)
   })
 
+  it('counts covered scheduled payments inside the configured debt share', () => {
+    const result = calculateIncomeAllocation(30000, 6011, 0, 60, 25, 15, true)
+
+    expect(result.scheduledApplied).toBe(6011)
+    expect(result.freshDebtBudget).toBe(1489)
+    expect(result.debtBudget).toBe(1489)
+    expect(result.btcAmount).toBe(18000)
+    expect(result.cashAmount).toBe(4500)
+    expect(result.btcAmount + result.debtBudget + result.cashAmount + result.scheduledApplied).toBe(30000)
+  })
+
   it('caps debt allocation at the real balance and redistributes excess by the debt-free profile', () => {
     const result = calculateIncomeAllocation(10000, 0, 0, 60, 25, 15, true, {
       eligibleDebtBalanceCzk: 500,

@@ -319,6 +319,13 @@
   flex-wrap: wrap;
 }
 
+.coinmate-api-fee-note {
+  margin: -6px 0 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .account-expanded-action {
   width: 34px;
   height: 34px;

@@ -12,7 +12,7 @@ public sealed class CoinmateBalanceWatchService(
 {
     private const string DefaultBaseUrl = "http://coinmate-controller:8080/";
     private static readonly TimeSpan StandardTimeout = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan WatchTimeout = TimeSpan.FromSeconds(40);
+    private static readonly TimeSpan WatchTimeout = Timeout.InfiniteTimeSpan;
 
     public async Task<CoinmateBalanceWatchStartedResponse> StartAsync(CancellationToken cancellationToken)
     {
