@@ -35,6 +35,7 @@ builder.Services
     .AddSignInManager()
     .AddEntityFrameworkStores<ApplicationDbContext>();
 builder.Services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, ApplicationClaimsPrincipalFactory>();
+builder.Services.AddSingleton<GamblingCounterService>();
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
 builder.Services.ConfigureApplicationCookie(options =>

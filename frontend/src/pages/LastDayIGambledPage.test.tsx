@@ -6,7 +6,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTestRouter } from '../router'
 
 describe('LastDayIGambledPage', () => {
-  beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 'samuel', displayName: 'Samuel', isDefault: false }) })))
+  beforeEach(() => {
+    let count = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/identity/me')) return Promise.resolve({ ok: true, status: 200, json: async () => ({ id: 'samuel', displayName: 'Samuel', isDefault: false }) } as Response)
+      if (url.endsWith('/identity/antiforgery')) return Promise.resolve({ ok: true, status: 200, json: async () => ({ token: 'csrf' }) } as Response)
+      if (url.endsWith('/identity/gambling-counter')) {
+        if (init?.method === 'POST') count += 1
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ count }) } as Response)
+      }
+      return Promise.reject(new Error(`Unexpected request: ${url}`))
+    }))
+  })
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
   it('reveals the first loss and keeps four cards on the page', async () => {
@@ -36,7 +48,24 @@ describe('LastDayIGambledPage', () => {
     expect(screen.getByText('−8k')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Skóre 11 ku 3 a jeho pokračování' })).toBeInTheDocument()
     expect(screen.getAllByText(/^0[1-4]$/)).toHaveLength(3)
-    await user.click(screen.getByRole('button', { name: 'Připravená karta 3' }))
+    const thirdCard = screen.getByRole('button', { name: /OK, dáme comeback na Tipáči/ })
+    expect(thirdCard).toHaveAttribute('aria-expanded', 'false')
+    await user.click(thirdCard)
+    expect(thirdCard).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('Jo? A co když thrownou 3v1 into 13:10?')).toBeInTheDocument()
+    expect(screen.getByText('−500 Kč')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Skóre comebacku s handicapem minus 4,5' })).toBeInTheDocument()
     expect(screen.getAllByText(/^0[1-4]$/)).toHaveLength(4)
-  })
+    const fourthCard = screen.getByRole('button', { name: /OK, i G2 jsou sráči/ })
+    await user.click(fourthCard)
+    expect(fourthCard).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('Jo? A to si myslíš, že Astralis nemůže jednu mapu prodat?… Může…')).toBeInTheDocument()
+    expect(screen.getByText('−2,5k')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Astralis prohrává proti týmu 5STAR' })).toHaveAttribute('aria-hidden', 'false')
+    expect(await screen.findByText('−14,25k', {}, { timeout: 2_500 })).toBeInTheDocument()
+    const counter = await screen.findByRole('button', { name: /Zase jsem tam poslal peníze/ }, { timeout: 7_000 })
+    await user.click(counter)
+    expect(counter).toHaveTextContent('1×')
+    expect(fetch).toHaveBeenCalledWith('/api/identity/gambling-counter', expect.objectContaining({ method: 'POST', headers: { 'X-CSRF-TOKEN': 'csrf' }, credentials: 'same-origin' }))
+  }, 12_000)
 })

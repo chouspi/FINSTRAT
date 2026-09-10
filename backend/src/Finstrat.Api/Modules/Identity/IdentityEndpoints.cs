@@ -42,6 +42,24 @@ public static class IdentityEndpoints
             return Results.Ok(ToResponse(user, principal, sessionExpiresAt));
         }).RequireAuthorization();
 
+        group.MapGet("/gambling-counter", async (
+            ClaimsPrincipal principal,
+            GamblingCounterService counter,
+            CancellationToken cancellationToken) =>
+        {
+            if (principal.FindFirstValue(IdentityClaims.IsDefault) == "true") return Results.Forbid();
+            return Results.Ok(new GamblingCounterResponse(await counter.GetAsync(cancellationToken)));
+        }).RequireAuthorization();
+
+        group.MapPost("/gambling-counter", async (
+            ClaimsPrincipal principal,
+            GamblingCounterService counter,
+            CancellationToken cancellationToken) =>
+        {
+            if (principal.FindFirstValue(IdentityClaims.IsDefault) == "true") return Results.Forbid();
+            return Results.Ok(new GamblingCounterResponse(await counter.IncrementAsync(cancellationToken)));
+        }).AddEndpointFilter<AntiforgeryEndpointFilter>().RequireAuthorization();
+
         group.MapPost("/login", async (
             LoginRequest request,
             UserManager<ApplicationUser> userManager,
@@ -185,6 +203,7 @@ public static class IdentityEndpoints
 public sealed record LoginRequest(string Identifier, string Password);
 public sealed record CreateUserRequest(string UserName, string DisplayName, string? Email, string Password, string Role);
 public sealed record UserResponse(Guid Id, string UserName, string DisplayName, string? Email, bool IsDefault, string Role);
+public sealed record GamblingCounterResponse(long Count);
 public sealed record CurrentUserResponse(
     Guid Id,
     string UserName,
