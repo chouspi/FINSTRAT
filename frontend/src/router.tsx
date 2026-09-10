@@ -16,6 +16,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { StrategyPage } from "./pages/StrategyPage";
 import { TaxesPage } from "./pages/TaxesPage";
 import { WealthPage } from "./pages/WealthPage";
+import { LastDayIGambledPage } from "./pages/LastDayIGambledPage";
 
 const rootRoute = createRootRoute({ component: App });
 const dashboardRoute = createRoute({
@@ -99,6 +100,11 @@ const debtsRoute = createRoute({
         : undefined,
   }),
 });
+const lastDayIGambledRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/last-day-i-gambled",
+  component: LastDayIGambledPage,
+});
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   wealthRoute,
@@ -109,6 +115,7 @@ const routeTree = rootRoute.addChildren([
   bitcoinRoute,
   vwceRoute,
   debtsRoute,
+  lastDayIGambledRoute,
 ]);
 
 export function createAppRouter(

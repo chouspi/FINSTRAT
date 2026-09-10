@@ -55,6 +55,7 @@ describe('hidden login', () => {
     await renderApp()
     expect(screen.queryByText(/přihl/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Odhlásit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Otevřít Last day I gambled' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
     const sidebar = screen.getByRole('complementary')
     expect(within(sidebar).getByText('BTC / USD')).toBeInTheDocument()

@@ -252,6 +252,12 @@
   overflow: hidden;
 }
 
+.roulette-link{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--red) 48%,var(--border));border-radius:50%;background:var(--bg-surface);text-decoration:none;transition:border-color 160ms ease,transform 160ms ease}
+.roulette-link>span{position:relative;width:19px;height:19px;margin:0;border:1px solid #d4d4d8;border-radius:50%;background:repeating-conic-gradient(var(--red) 0 22.5deg,#18181b 22.5deg 45deg)}
+.roulette-link>span:before{content:"";position:absolute;inset:4px;border:1px solid rgba(255,255,255,.75);border-radius:50%;background:#166534}
+.roulette-link i{position:absolute;inset:7px;border-radius:50%;background:#f4f4f5}
+.roulette-link:hover{border-color:var(--red);transform:rotate(18deg)}
+
 .header-title {
   margin: 0;
   color: #1b2927;
