@@ -1,25 +1,31 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { LockKeyhole, Trash2 } from 'lucide-react'
 import { apiRequest } from '../lib/api'
 import fakeDeposit from '../assets/last day I gambled/1/pasted file.png'
-import scoreShort from '../assets/last day I gambled/2/skore short.png'
 import scoreLong from '../assets/last day I gambled/2/skore.png'
 import './LastDayIGambledPage.css'
 
 type CurrentUser = { isDefault: boolean }
 
 export function LastDayIGambledPage() {
+  const [introStage, setIntroStage] = useState(0)
   const [firstRevealed, setFirstRevealed] = useState(false)
   const [secondRevealed, setSecondRevealed] = useState(false)
   const [thirdRevealed, setThirdRevealed] = useState(false)
   const identity = useQuery({ queryKey: ['identity', 'me'], queryFn: () => apiRequest<CurrentUser>('/api/identity/me'), retry: false })
 
+  useEffect(() => {
+    const reminder = window.setTimeout(() => setIntroStage(1), 1_000)
+    const conclusion = window.setTimeout(() => setIntroStage(2), 2_000)
+    return () => { window.clearTimeout(reminder); window.clearTimeout(conclusion) }
+  }, [])
+
   if (identity.isPending) return <section className="gambled-page"><div className="gambled-loading" /></section>
   if (!identity.data || identity.data.isDefault) return <section className="gambled-private"><LockKeyhole size={22} /><span>Soukromý obsah</span></section>
 
   return <section className="gambled-page">
-    <header className="gambled-intro"><span>PRIVATE ARCHIVE</span><h2>last day I gambled</h2><time dateTime="2026-09-10">10. 9. 2026</time></header>
+    <header className="gambled-intro"><span>PRIVATE ARCHIVE</span><h2>Dneska se ti chce gamblit, jo?</h2><div className="gambled-intro-sequence" aria-live="polite">{introStage >= 1 && <p>Pamatuješ na 10. 9. 2026, když jsi progamblil výplatu?</p>}{introStage >= 2 && <strong>Ne? Tak já ti to připomenu.</strong>}</div></header>
     <ol className="gambled-cards">
       <li className={firstRevealed ? 'is-revealed' : undefined}>
         <button className="gambled-card gambled-card--first" type="button" aria-expanded={firstRevealed} onClick={() => setFirstRevealed(true)}>
@@ -33,7 +39,7 @@ export function LastDayIGambledPage() {
         <button className="gambled-card gambled-card--second" type="button" aria-expanded={secondRevealed} onClick={() => setSecondRevealed(true)}>
           <span className="gambled-number">02</span>
           <span className="gambled-copy"><span className="gambled-thought">OK, Polymarket programovali kokoti. Vyhraju to zpátky, není problém. Už to skoro vyhráli, je to 11:3.</span><strong>Jo? A co když prohrají deset roundů po sobě?</strong></span>
-          <span className="gambled-score"><img className="gambled-score-short" src={scoreShort} alt="Krátké skóre 11 ku 3" aria-hidden={secondRevealed} /><img className="gambled-score-long" src={scoreLong} alt="Prodloužené skóre po deseti prohraných kolech" aria-hidden={!secondRevealed} /></span>
+          <span className="gambled-score"><img src={scoreLong} alt="Skóre 11 ku 3 a jeho pokračování" /></span>
         </button>
         <strong className="gambled-loss" aria-hidden={!secondRevealed}>−8k</strong>
       </li>}

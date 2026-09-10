@@ -86,7 +86,7 @@ const pageHeadings: Record<string, string> = {
   '/debts': 'Dluhy',
   '/taxes': 'Daně',
   '/settings': 'Nastavení',
-  '/last-day-i-gambled': 'last day I gambled',
+  '/last-day-i-gambled': 'Připomínka',
 }
 
 const usdFormatter = new Intl.NumberFormat('en-US', {
