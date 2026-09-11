@@ -108,6 +108,7 @@ export function WealthPage() {
     queryKey: ["wealth", "history", days],
     queryFn: () =>
       apiRequest<WealthHistory>(`/api/wealth/history?days=${days}`),
+    placeholderData: (previousData) => previousData,
     retry: false,
   });
   const fullHistory = useQuery({
@@ -199,25 +200,11 @@ export function WealthPage() {
       <div className="wealth-content">
         <div className="wealth-panel wealth-summary">
           <div className="wealth-primary">
-            <div className="wealth-primary-icon" aria-hidden="true">
-              <WalletCards size={24} />
-            </div>
-            <div className="wealth-primary-copy">
-              <span>HODNOTA PORTFOLIA BEZ HOTOVOSTI</span>
-              <strong>{current ? czk.format(currentValue) : "—"}</strong>
-              <small>
-                BTC a VWCE v aktuálních cenách
-                {current?.quality === "estimated" && (
-                  <b>Odhadovaná cena</b>
-                )}
-              </small>
-            </div>
+            <strong className="wealth-primary-value">
+              {current ? czk.format(currentValue) : "—"}
+            </strong>
           </div>
           <div className="wealth-summary-stats">
-            <Stat
-              label="Hodnota portfolia"
-              value={czk.format(current?.grossAssetsCzk ?? 0)}
-            />
             <Stat label="Investováno" value={czk.format(invested)} />
             <Stat
               label="Nerealizovaný výsledek držených aktiv"
@@ -238,7 +225,10 @@ export function WealthPage() {
             )}
           </div>
         </div>
-        <div className="wealth-panel wealth-chart-section">
+        <div
+          className={`wealth-panel wealth-chart-section${history.isPlaceholderData ? " is-updating" : ""}`}
+          aria-busy={history.isPlaceholderData}
+        >
           <header>
             <div className="wealth-chart-heading">
               <div className="wealth-section-icon" aria-hidden="true">

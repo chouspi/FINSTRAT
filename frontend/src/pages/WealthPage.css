@@ -57,19 +57,6 @@
     var(--bg-panel);
 }
 
-.wealth-primary::after {
-  content: "";
-  position: absolute;
-  right: -70px;
-  bottom: -120px;
-  width: 260px;
-  height: 260px;
-  border: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.wealth-primary-icon,
 .wealth-section-icon {
   display: grid;
   place-items: center;
@@ -79,19 +66,6 @@
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-.wealth-primary-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 13px;
-}
-
-.wealth-primary-copy {
-  position: relative;
-  z-index: 1;
-  min-width: 0;
-}
-
-.wealth-primary-copy > span,
 .wealth-stat > span,
 .wealth-chart-heading p,
 .wealth-breakdown-title p {
@@ -104,35 +78,15 @@
   text-transform: uppercase;
 }
 
-.wealth-primary-copy > strong {
+.wealth-primary > .wealth-primary-value {
   display: block;
   color: var(--text);
-  font-size: clamp(28px, 3vw, 38px);
+  font-size: clamp(34px, 4vw, 48px);
   font-weight: 750;
   line-height: 1;
   letter-spacing: -.04em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.wealth-primary-copy > small {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 11px;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.wealth-primary-copy > small b {
-  padding: 3px 6px;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-  border-radius: 6px;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-  font-size: 9px;
-  font-weight: 650;
 }
 
 .wealth-summary-stats {
@@ -261,6 +215,16 @@
 .wealth-chart-section > .wealth-empty-chart {
   margin: 20px 22px 0;
   width: calc(100% - 44px);
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.wealth-chart-section.is-updating > .wealth-chart,
+.wealth-chart-section.is-updating > .wealth-rent-chart,
+.wealth-chart-section.is-updating > .wealth-empty-chart {
+  opacity: .42;
+  transform: translateY(2px);
 }
 
 .wealth-chart-section > .wealth-legend,
@@ -427,13 +391,8 @@
     padding: 22px 18px;
   }
 
-  .wealth-primary-icon {
-    width: 42px;
-    height: 42px;
-  }
-
-  .wealth-primary-copy > strong {
-    font-size: clamp(25px, 8vw, 32px);
+  .wealth-primary > .wealth-primary-value {
+    font-size: clamp(32px, 10vw, 42px);
   }
 
   .wealth-summary-stats {

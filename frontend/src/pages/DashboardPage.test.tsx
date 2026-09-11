@@ -199,9 +199,11 @@ describe("DashboardPage", () => {
       </QueryClientProvider>,
     );
 
-    expect(
-      await screen.findByText("HODNOTA PORTFOLIA BEZ HOTOVOSTI"),
-    ).toBeInTheDocument();
+    await screen.findByRole("tab", { name: "Portfolio value" });
+    const primaryValue = document.querySelector(".wealth-primary");
+    expect(primaryValue).toHaveTextContent("380 000 Kč");
+    expect(primaryValue).not.toHaveTextContent("HODNOTA PORTFOLIA");
+    expect(primaryValue).not.toHaveTextContent("BTC a VWCE");
     expect(screen.queryByText("ALOKACE AKTIV")).not.toBeInTheDocument();
     expect(screen.getByText(/79 % portfolia/)).toBeInTheDocument();
     expect(screen.getByText(/21 % portfolia/)).toBeInTheDocument();
@@ -263,6 +265,7 @@ describe("DashboardPage", () => {
     expect(screen.getByText(/Hodnota VWCE .*Kč/)).toBeInTheDocument();
     expect(screen.getByText(/při sazbě 2 % p.a./i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "1M" }));
+    expect(document.querySelector(".wealth-loading")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(
         vi
