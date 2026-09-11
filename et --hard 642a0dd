@@ -1,0 +1,32 @@
+[33m4407047[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m activation period removed
+[33m0b45eaf[m new strategy
+[33m642a0dd[m new jmenitab2
+[33m93142e7[m new jmenitab
+[33m799da45[m faes
+[33mb62c471[m kou kout
+[33mc77db05[m kou kout
+[33m7c745f6[m last day I gambled
+[33m537e742[m fixed coinmate watcher heartbeat
+[33mfe46336[m feas
+[33mc152a7b[m api buy
+[33m26a0969[m Allow cancelling income processing
+[33m304b976[m afe
+[33m5169617[m Mask VWCE reallocations for default viewer
+[33m56c58a2[m fixed bug with odkladani splatek
+[33mda363e0[m fase
+[33mbdc00e5[m ea
+[33m3254330[m Refine FINSTRAT sidebar branding
+[33m524383b[m Complete financial planning workflows
+[33m44e4143[m Add routed Bitcoin portfolio page
+[33m850707b[m Add owner-scoped Bitcoin overview API
+[33m5448c1d[m Show BTC daily price change
+[33m4c2fa5a[m Refresh active dashboard data centrally
+[33mfc5a299[m Add cached BTC market data API
+[33mbf5d62f[m Center header and show active user
+[33me230e2d[m Move dashboard indicators to sidebar
+[33m364b6f9[m Refine dashboard shell header
+[33m94af99f[m Assign ownership to investment accounts
+[33maa895d0[m Add sidebar application shell
+[33m751d68a[m Add default identity module
+[33m4ff2211[m Add transactional SQLite migration
+[33m6c3c5c0[m Initialize PostgreSQL data model

@@ -2,8 +2,6 @@ namespace Finstrat.Api.Modules.Strategy;
 
 public sealed record StrategySettingsResponse(
     short BtcTaxPeriodYears,
-    bool CheckpointAuto,
-    decimal CheckpointActivationThresholdCzk,
     decimal CheckpointTriggerFloorCzk,
     decimal CheckpointTriggerPercent,
     decimal RealizationStepProfitCzk,
@@ -12,8 +10,6 @@ public sealed record StrategySettingsResponse(
 
 public sealed record UpdateStrategySettingsRequest(
     short BtcTaxPeriodYears,
-    bool CheckpointAuto,
-    decimal CheckpointActivationThresholdCzk,
     decimal CheckpointTriggerFloorCzk,
     decimal CheckpointTriggerPercent,
     decimal RealizationStepProfitCzk,

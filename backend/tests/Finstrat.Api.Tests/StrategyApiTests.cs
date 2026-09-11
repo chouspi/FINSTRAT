@@ -131,20 +131,19 @@ public sealed class StrategyApiTests(IdentityApiFixture fixture)
     }
 
     [Fact]
-    public async Task Strategy_uses_legacy_defaults_and_validates_persisted_settings()
+    public async Task Strategy_activates_immediately_and_validates_persisted_settings()
     {
         using var client = fixture.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { HandleCookies = true });
         var overview = await client.GetFromJsonAsync<JsonElement>("/api/strategy/overview");
-        Assert.Equal(100000m, overview.GetProperty("settings").GetProperty("checkpointActivationThresholdCzk").GetDecimal());
-        Assert.Equal("AKUMULOVAT", overview.GetProperty("recommendation").GetString());
+        Assert.True(overview.GetProperty("checkpointActive").GetBoolean());
+        Assert.Equal("DRŽET", overview.GetProperty("recommendation").GetString());
 
         var token = (await client.GetFromJsonAsync<JsonElement>("/api/identity/antiforgery")).GetProperty("token").GetString()!;
         var request = new HttpRequestMessage(HttpMethod.Put, "/api/strategy/settings")
         {
             Content = JsonContent.Create(new
             {
-                btcTaxPeriodYears = 3, checkpointAuto = false, checkpointActivationThresholdCzk = 150000,
-                checkpointTriggerFloorCzk = 25000, checkpointTriggerPercent = 12,
+                btcTaxPeriodYears = 3, checkpointTriggerFloorCzk = 25000, checkpointTriggerPercent = 12,
                 realizationStepProfitCzk = 30000, realizationStepTransferCzk = 15000,
                 vwceRentRatePercent = 2.5m,
             }),
@@ -152,8 +151,7 @@ public sealed class StrategyApiTests(IdentityApiFixture fixture)
         request.Headers.Add("X-CSRF-TOKEN", token);
         Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(request)).StatusCode);
         overview = await client.GetFromJsonAsync<JsonElement>("/api/strategy/overview");
-        Assert.Equal(150000m, overview.GetProperty("settings").GetProperty("checkpointActivationThresholdCzk").GetDecimal());
-        Assert.False(overview.GetProperty("settings").GetProperty("checkpointAuto").GetBoolean());
+        Assert.Equal(25000m, overview.GetProperty("settings").GetProperty("checkpointTriggerFloorCzk").GetDecimal());
         var vwceOverview = await client.GetFromJsonAsync<JsonElement>("/api/vwce/overview");
         Assert.Equal(2.5m, vwceOverview.GetProperty("totals").GetProperty("rentRatePercent").GetDecimal());
 
@@ -162,8 +160,7 @@ public sealed class StrategyApiTests(IdentityApiFixture fixture)
         {
             Content = JsonContent.Create(new
             {
-                btcTaxPeriodYears = 3, checkpointAuto = true, checkpointActivationThresholdCzk = 0,
-                checkpointTriggerFloorCzk = 25000, checkpointTriggerPercent = 12,
+                btcTaxPeriodYears = 3, checkpointTriggerFloorCzk = -1, checkpointTriggerPercent = 12,
                 realizationStepProfitCzk = 30000, realizationStepTransferCzk = 15000,
                 vwceRentRatePercent = 2.5m,
             }),

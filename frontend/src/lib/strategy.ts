@@ -1,7 +1,5 @@
 export type StrategySettings = {
   btcTaxPeriodYears: number
-  checkpointAuto: boolean
-  checkpointActivationThresholdCzk: number
   checkpointTriggerFloorCzk: number
   checkpointTriggerPercent: number
   realizationStepProfitCzk: number
@@ -22,5 +20,5 @@ export type StrategyOverview = {
   progressPercent: number
   remainingCzk: number
   recommendedTransferCzk: number
-  recommendation: 'AKUMULOVAT' | 'DRŽET' | 'PRODAT'
+  recommendation: 'DRŽET' | 'PRODAT'
 }

@@ -82,8 +82,6 @@ describe("DashboardPage", () => {
             json: async () => ({
               settings: {
                 btcTaxPeriodYears: 3,
-                checkpointAuto: true,
-                checkpointActivationThresholdCzk: 100000,
                 checkpointTriggerFloorCzk: 20000,
                 checkpointTriggerPercent: 10,
                 realizationStepProfitCzk: 20000,

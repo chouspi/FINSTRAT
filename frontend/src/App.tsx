@@ -307,7 +307,7 @@ function App() {
         <div className="sidebar-metrics">
           <div className="strategy-indicator">
             <div className="strategy-label">
-              <span>{strategyOverview.data?.checkpointActive ? 'Trigger' : 'Aktivace'}</span>
+              <span>Trigger</span>
               <strong>{strategyOverview.data?.recommendation === 'PRODAT' ? 'PRODAT' : `${Math.round(strategyOverview.data?.progressPercent ?? 0)} %`}</strong>
             </div>
             <div

@@ -59,7 +59,7 @@ describe('hidden login', () => {
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
     const sidebar = screen.getByRole('complementary')
     expect(within(sidebar).getByText('BTC / USD')).toBeInTheDocument()
-    expect(within(sidebar).getByText('Aktivace')).toBeInTheDocument()
+    expect(within(sidebar).getByText('Trigger')).toBeInTheDocument()
     expect(within(screen.getByRole('banner')).queryByText('BTC / USD')).not.toBeInTheDocument()
     expect(screen.queryByText('PRIVATE LEDGER')).not.toBeInTheDocument()
     expect(within(sidebar).queryByText('Výdaje')).not.toBeInTheDocument()

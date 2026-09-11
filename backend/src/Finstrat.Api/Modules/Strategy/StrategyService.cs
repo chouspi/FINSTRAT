@@ -8,7 +8,7 @@ namespace Finstrat.Api.Modules.Strategy;
 
 public sealed class StrategyService(ApplicationDbContext dbContext, BtcPriceService btcPriceService)
 {
-    private static readonly StrategySettingsResponse Defaults = new(3, true, 100000, 20000, 10, 20000, 10000, 2);
+    private static readonly StrategySettingsResponse Defaults = new(3, 20000, 10, 20000, 10000, 2);
 
     public async Task<StrategyOverviewResponse> GetOverviewAsync(
         Guid householdId, Guid userId, CancellationToken cancellationToken)
@@ -23,18 +23,10 @@ public sealed class StrategyService(ApplicationDbContext dbContext, BtcPriceServ
             var price = await btcPriceService.GetAsync(cancellationToken);
             var portfolioValue = decimal.Round(quantity * price.PriceCzk, 2);
             var state = await ReadStateAsync(connection, householdId, userId, cancellationToken);
-            if (state is null && settings.CheckpointAuto && portfolioValue >= settings.CheckpointActivationThresholdCzk)
+            if (state is null)
             {
                 await ActivateAsync(connection, householdId, userId, portfolioValue, cancellationToken);
                 state = new StrategyState(portfolioValue, DateTimeOffset.UtcNow);
-            }
-
-            if (state is null)
-            {
-                var progress = Percent(portfolioValue, settings.CheckpointActivationThresholdCzk);
-                return new(settings, quantity, price.PriceCzk, portfolioValue, false, null, 0, 0,
-                    settings.CheckpointActivationThresholdCzk, progress,
-                    Math.Max(0, settings.CheckpointActivationThresholdCzk - portfolioValue), 0, "AKUMULOVAT");
             }
 
             var adjustment = await ReadCheckpointAdjustmentAsync(
@@ -67,16 +59,13 @@ public sealed class StrategyService(ApplicationDbContext dbContext, BtcPriceServ
         if (connection.State != ConnectionState.Open) await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             INSERT INTO btc_strategy_settings (
-              household_id, owner_user_id, btc_tax_period_years, checkpoint_auto,
-              checkpoint_activation_threshold_czk, checkpoint_trigger_floor_czk,
+              household_id, owner_user_id, btc_tax_period_years, checkpoint_trigger_floor_czk,
               checkpoint_trigger_percent, realization_step_profit_czk,
               realization_step_transfer_czk, vwce_rent_rate_percent
-            ) VALUES (@household_id, @user_id, @tax_years, @auto, @activation, @floor,
+            ) VALUES (@household_id, @user_id, @tax_years, @floor,
               @trigger_percent, @step_profit, @step_transfer, @rent)
             ON CONFLICT (household_id, owner_user_id) DO UPDATE SET
               btc_tax_period_years = EXCLUDED.btc_tax_period_years,
-              checkpoint_auto = EXCLUDED.checkpoint_auto,
-              checkpoint_activation_threshold_czk = EXCLUDED.checkpoint_activation_threshold_czk,
               checkpoint_trigger_floor_czk = EXCLUDED.checkpoint_trigger_floor_czk,
               checkpoint_trigger_percent = EXCLUDED.checkpoint_trigger_percent,
               realization_step_profit_czk = EXCLUDED.realization_step_profit_czk,
@@ -87,8 +76,6 @@ public sealed class StrategyService(ApplicationDbContext dbContext, BtcPriceServ
         command.Parameters.AddWithValue("household_id", householdId);
         command.Parameters.AddWithValue("user_id", userId);
         command.Parameters.AddWithValue("tax_years", request.BtcTaxPeriodYears);
-        command.Parameters.AddWithValue("auto", request.CheckpointAuto);
-        command.Parameters.AddWithValue("activation", request.CheckpointActivationThresholdCzk);
         command.Parameters.AddWithValue("floor", request.CheckpointTriggerFloorCzk);
         command.Parameters.AddWithValue("trigger_percent", request.CheckpointTriggerPercent);
         command.Parameters.AddWithValue("step_profit", request.RealizationStepProfitCzk);
@@ -102,8 +89,7 @@ public sealed class StrategyService(ApplicationDbContext dbContext, BtcPriceServ
         NpgsqlConnection connection, Guid householdId, Guid userId, CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("""
-            SELECT btc_tax_period_years, checkpoint_auto, checkpoint_activation_threshold_czk,
-              checkpoint_trigger_floor_czk, checkpoint_trigger_percent, realization_step_profit_czk,
+            SELECT btc_tax_period_years, checkpoint_trigger_floor_czk, checkpoint_trigger_percent, realization_step_profit_czk,
               realization_step_transfer_czk, vwce_rent_rate_percent
             FROM btc_strategy_settings WHERE household_id = @household_id AND owner_user_id = @user_id
             """, connection);
@@ -111,8 +97,8 @@ public sealed class StrategyService(ApplicationDbContext dbContext, BtcPriceServ
         command.Parameters.AddWithValue("user_id", userId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
-            ? new(reader.GetInt16(0), reader.GetBoolean(1), reader.GetDecimal(2), reader.GetDecimal(3),
-                reader.GetDecimal(4), reader.GetDecimal(5), reader.GetDecimal(6), reader.GetDecimal(7))
+            ? new(reader.GetInt16(0), reader.GetDecimal(1), reader.GetDecimal(2), reader.GetDecimal(3),
+                reader.GetDecimal(4), reader.GetDecimal(5))
             : Defaults;
     }
 
@@ -203,8 +189,8 @@ public sealed class StrategyService(ApplicationDbContext dbContext, BtcPriceServ
     {
         if (request.BtcTaxPeriodYears is < 1 or > 20)
             throw new StrategyValidationException("Daňový časový test musí být mezi 1 a 20 lety.");
-        if (request.CheckpointActivationThresholdCzk <= 0 || request.CheckpointTriggerFloorCzk < 0
-            || request.RealizationStepProfitCzk <= 0 || request.RealizationStepTransferCzk <= 0)
+        if (request.CheckpointTriggerFloorCzk < 0 || request.RealizationStepProfitCzk <= 0
+            || request.RealizationStepTransferCzk <= 0)
             throw new StrategyValidationException("Částky strategie musí být kladné; spodní hranice může být nula.");
         if (request.CheckpointTriggerPercent is < 0 or > 100 || request.VwceRentRatePercent is < 0 or > 100)
             throw new StrategyValidationException("Procenta strategie musí být mezi 0 a 100.");

@@ -110,12 +110,12 @@ function VwcePortfolioCard({ data, priceCzk, onClick }: { data?: VwceOverview; p
 function StrategyCard({ data, onClick }: { data?: StrategyOverview; onClick: () => void }) {
   const valid = data && typeof data.portfolioValueCzk === 'number' && typeof data.progressPercent === 'number'
   const recommendation = valid ? data.recommendation : 'NAČÍTÁM'
-  const tone = recommendation === 'PRODAT' ? 'sell' : recommendation === 'DRŽET' ? 'hold' : 'accumulate'
+  const tone = recommendation === 'PRODAT' ? 'sell' : 'hold'
   return <button className="dashboard-card dashboard-strategy-card" type="button" aria-label="Otevřít BTC strategii" onClick={onClick}>
     <DashboardCardHeader title="BTC Strategie" />
     <div className="dashboard-strategy-main"><span>Hodnota BTC portfolia</span><strong>{valid ? czk.format(data.portfolioValueCzk) : '—'}</strong><small>{valid ? `${data.btcQuantity.toFixed(6)} BTC` : 'Načítám strategii…'}</small></div>
-    <div className="dashboard-strategy-status"><div><span>{data?.checkpointActive ? 'Zisk od checkpointu' : 'Do aktivace zbývá'}</span><strong className={data?.checkpointActive && data.profitCzk < 0 ? 'negative' : undefined}>{valid ? czk.format(data.checkpointActive ? data.profitCzk : data.remainingCzk) : '—'}</strong></div><b className={tone}>{recommendation}</b></div>
-    <div className="dashboard-strategy-progress"><div><span style={{ width: `${valid ? Math.min(100, Math.max(0, data.progressPercent)) : 0}%` }} /></div><small>{data?.checkpointActive ? `Trigger ${czk.format(data.triggerCzk)}` : `Aktivace ${czk.format(data?.settings?.checkpointActivationThresholdCzk ?? 0)}`}</small><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></div>
+    <div className="dashboard-strategy-status"><div><span>Zisk od checkpointu</span><strong className={data && data.profitCzk < 0 ? 'negative' : undefined}>{valid ? czk.format(data.profitCzk) : '—'}</strong></div><b className={tone}>{recommendation}</b></div>
+    <div className="dashboard-strategy-progress"><div><span style={{ width: `${valid ? Math.min(100, Math.max(0, data.progressPercent)) : 0}%` }} /></div><small>{data ? `Trigger ${czk.format(data.triggerCzk)}` : 'Trigger'}</small><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></div>
     {valid && data.recommendedTransferCzk > 0 && <p>Přesunout do VWCE: <strong>{czk.format(data.recommendedTransferCzk)}</strong></p>}
   </button>
 }

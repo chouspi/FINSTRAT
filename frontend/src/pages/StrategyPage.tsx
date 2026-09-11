@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { CircleGauge, TrendingUp } from 'lucide-react'
+import { ArrowRight, Bitcoin, CircleGauge, Flag, Landmark, Target, TrendingUp } from 'lucide-react'
 import { apiRequest } from '../lib/api'
 import type { StrategyOverview } from '../lib/strategy'
 import './StrategyPage.css'
@@ -10,29 +10,76 @@ export function StrategyPage() {
   const overview = useQuery({ queryKey: ['strategy', 'overview'], queryFn: () => apiRequest<StrategyOverview>('/api/strategy/overview'), retry: false })
   if (overview.isPending) return <section className="strategy-page"><div className="strategy-loading" /></section>
   if (overview.isError) return <section className="strategy-page strategy-state"><CircleGauge size={28} /><h2>Strategii se nepodařilo načíst</h2><button type="button" onClick={() => overview.refetch()}>Zkusit znovu</button></section>
+
   const data = overview.data
   const triggered = data.recommendation === 'PRODAT'
-  return <section className="strategy-page">
-    <div className={`strategy-banner strategy-banner--${data.recommendation.toLowerCase()}`}>
-      <div><span>{data.checkpointActive ? triggered ? 'TRIGGER DOSAŽEN' : 'AKTIVNÍ CHECKPOINT' : 'FÁZE AKUMULACE'}</span><h2>{data.checkpointActive ? triggered ? `Realizovat ${czk.format(data.recommendedTransferCzk)} do VWCE` : 'Držet a pokračovat podle plánu' : 'Budování prvního checkpointu'}</h2><p>{data.checkpointActive ? `Profit je ${czk.format(data.profitCzk)} vůči checkpointu ${czk.format(data.checkpointValueCzk ?? 0)}.` : data.settings.checkpointAuto ? 'Po dosažení nastaveného cíle se checkpoint aktivuje automaticky.' : 'Automatická aktivace checkpointu je vypnutá.'}</p></div><strong>{data.recommendation}</strong>
-    </div>
+  const progress = Math.min(100, Math.max(0, data.progressPercent))
+  const checkpoint = data.checkpointValueCzk ?? data.portfolioValueCzk
+  const statusTitle = triggered ? `Převést ${czk.format(data.recommendedTransferCzk)} do VWCE` : 'Držet pozici'
+  const statusCopy = triggered
+    ? 'Profit překročil nastavený trigger. Realizujte pouze doporučenou část a zbytek BTC ponechte v portfoliu.'
+    : `Do další realizace zbývá ${czk.format(data.remainingCzk)} zisku nad checkpoint.`
 
-    <div className="strategy-metrics">
-      <StrategyMetric label="BTC Portfolio" value={czk.format(data.portfolioValueCzk)} sub={`${data.btcQuantity.toFixed(6)} BTC`} />
-      <StrategyMetric label={data.checkpointActive ? 'Checkpoint' : 'Aktuální cena BTC'} value={czk.format(data.checkpointActive ? data.checkpointValueCzk ?? 0 : data.btcPriceCzk)} sub={data.checkpointActive ? 'referenční hodnota' : 'tržní cena za 1 BTC'} />
-      <StrategyMetric label={data.checkpointActive ? 'Profit' : 'Cíl aktivace'} value={czk.format(data.checkpointActive ? data.profitCzk : data.settings.checkpointActivationThresholdCzk)} tone={data.checkpointActive ? data.profitCzk >= 0 ? 'positive' : 'negative' : undefined} sub={data.checkpointActive ? `${data.profitPercent >= 0 ? '+' : ''}${data.profitPercent.toFixed(2)} % checkpointu` : data.settings.checkpointAuto ? 'automatická aktivace' : 'automatika vypnuta'} />
-      <StrategyMetric label={data.checkpointActive ? 'Trigger' : 'Zbývá'} value={czk.format(data.checkpointActive ? data.triggerCzk : data.remainingCzk)} sub={data.checkpointActive ? `max. práh nebo ${data.settings.checkpointTriggerPercent} % checkpointu` : 'do prvního checkpointu'} />
-    </div>
-
+  return <section className={`strategy-page strategy-page--${triggered ? 'sell' : 'hold'}`}>
     <div className="strategy-content">
-      <section className="strategy-panel strategy-progress-panel">
-        <header><div><span>{data.checkpointActive ? 'POSTUP K TRIGGERU' : 'AKUMULACE'}</span><h3>{triggered ? 'Dosaženo' : `${Math.round(data.progressPercent)} %`}</h3></div><TrendingUp size={19} /></header>
-        <div className="strategy-progress"><span style={{ width: `${Math.min(100, Math.max(0, data.progressPercent))}%` }} /></div>
-        <div className="strategy-progress-labels"><span>{data.checkpointActive ? `Profit ${czk.format(data.profitCzk)}` : `Portfolio ${czk.format(data.portfolioValueCzk)}`}</span><strong>{triggered ? 'Trigger překročen' : `Zbývá ${czk.format(data.remainingCzk)}`}</strong></div>
+      <section className="strategy-panel strategy-summary" aria-labelledby="strategy-status-title">
+        <div className="strategy-primary">
+          <div className="strategy-primary-top">
+            <span className="strategy-primary-icon" aria-hidden="true">{triggered ? <TrendingUp size={20} /> : <CircleGauge size={20} />}</span>
+            <span className="strategy-status-badge">{data.recommendation}</span>
+          </div>
+          <div>
+            <p>{triggered ? 'TRIGGER DOSAŽEN' : 'AKTIVNÍ CHECKPOINT'}</p>
+            <h1 id="strategy-status-title">{statusTitle}</h1>
+            <span>{statusCopy}</span>
+          </div>
+        </div>
+        <div className="strategy-summary-stats">
+          <StrategyMetric icon={Bitcoin} label="BTC portfolio" value={czk.format(data.portfolioValueCzk)} sub={`${data.btcQuantity.toFixed(6)} BTC`} />
+          <StrategyMetric icon={Flag} label="Checkpoint" value={czk.format(checkpoint)} sub="referenční hodnota" />
+          <StrategyMetric icon={TrendingUp} label="Zisk od checkpointu" value={czk.format(data.profitCzk)} tone={data.profitCzk >= 0 ? 'positive' : 'negative'} sub={`${data.profitPercent >= 0 ? '+' : ''}${data.profitPercent.toFixed(2)} %`} />
+        </div>
       </section>
 
+      <section className="strategy-panel strategy-trigger" aria-labelledby="strategy-trigger-title">
+        <header className="strategy-panel-heading">
+          <div className="strategy-heading-copy">
+            <span className="strategy-section-icon" aria-hidden="true"><Target size={18} /></span>
+            <div><p>POSTUP K TRIGGERU</p><h2 id="strategy-trigger-title">{triggered ? 'Trigger byl překročen' : `${Math.round(progress)} % cíle`}</h2><span>Realizace se řídí ziskem nad aktivním checkpointem.</span></div>
+          </div>
+          <div className={`strategy-trigger-value${triggered ? ' positive' : ''}`}><span>TRIGGER</span><strong>{czk.format(data.triggerCzk)}</strong></div>
+        </header>
+        <div className="strategy-progress-body">
+          <div className="strategy-progress-track" role="progressbar" aria-label="Postup k triggeru" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><span style={{ width: `${progress}%` }} /></div>
+          <div className="strategy-progress-labels"><span>Zisk <strong className={data.profitCzk >= 0 ? 'positive' : 'negative'}>{czk.format(data.profitCzk)}</strong></span><span>{triggered ? 'Trigger překročen' : <>Zbývá <strong>{czk.format(data.remainingCzk)}</strong></>}</span></div>
+        </div>
+      </section>
+
+      <section className="strategy-panel strategy-rules" aria-labelledby="strategy-rules-title">
+        <header className="strategy-panel-heading">
+          <div className="strategy-heading-copy">
+            <span className="strategy-section-icon" aria-hidden="true"><Landmark size={18} /></span>
+            <div><p>PRAVIDLA REALIZACE</p><h2 id="strategy-rules-title">Od zisku k převodu</h2><span>Strategie chrání základ portfolia a realizuje jen definovanou část růstu.</span></div>
+          </div>
+        </header>
+        <div className="strategy-rule-flow">
+          <RuleStep number="01" label="Checkpoint" value={czk.format(checkpoint)} note="Základ zůstává v BTC" />
+          <ArrowRight className="strategy-rule-arrow" size={17} aria-hidden="true" />
+          <RuleStep number="02" label="Profit trigger" value={`${data.settings.checkpointTriggerPercent} %`} note={`Minimálně ${czk.format(data.settings.checkpointTriggerFloorCzk)}`} />
+          <ArrowRight className="strategy-rule-arrow" size={17} aria-hidden="true" />
+          <RuleStep number="03" label="Převod do VWCE" value={czk.format(data.settings.realizationStepTransferCzk)} note={`Za každých ${czk.format(data.settings.realizationStepProfitCzk)} zisku`} tone="green" />
+        </div>
+      </section>
     </div>
   </section>
 }
 
-function StrategyMetric({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) { return <div><span>{label}</span><strong className={tone}>{value}</strong>{sub && <small>{sub}</small>}</div> }
+type Icon = typeof Bitcoin
+
+function StrategyMetric({ icon: Icon, label, value, sub, tone }: { icon: Icon; label: string; value: string; sub: string; tone?: string }) {
+  return <div className="strategy-stat"><span className="strategy-stat-icon" aria-hidden="true"><Icon size={16} /></span><div><span>{label}</span><strong className={tone}>{value}</strong><small>{sub}</small></div></div>
+}
+
+function RuleStep({ number, label, value, note, tone }: { number: string; label: string; value: string; note: string; tone?: 'green' }) {
+  return <article className={`strategy-rule-step${tone ? ` strategy-rule-step--${tone}` : ''}`}><span>{number}</span><div><p>{label}</p><strong>{value}</strong><small>{note}</small></div></article>
+}
