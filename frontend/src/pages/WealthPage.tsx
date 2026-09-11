@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { TrendingUp, WalletCards } from "lucide-react";
+import { BarChart3, Bitcoin, TrendingUp, WalletCards } from "lucide-react";
 import { apiRequest } from "../lib/api";
 import { calculateWealthTrend, type WealthTrend } from "../lib/wealthTrend";
 import "./WealthPage.css";
@@ -199,8 +199,19 @@ export function WealthPage() {
       <div className="wealth-content">
         <div className="wealth-panel wealth-summary">
           <div className="wealth-primary">
-            <span>HODNOTA PORTFOLIA BEZ HOTOVOSTI</span>
-            <strong>{current ? czk.format(currentValue) : "—"}</strong>
+            <div className="wealth-primary-icon" aria-hidden="true">
+              <WalletCards size={24} />
+            </div>
+            <div className="wealth-primary-copy">
+              <span>HODNOTA PORTFOLIA BEZ HOTOVOSTI</span>
+              <strong>{current ? czk.format(currentValue) : "—"}</strong>
+              <small>
+                BTC a VWCE v aktuálních cenách
+                {current?.quality === "estimated" && (
+                  <b>Odhadovaná cena</b>
+                )}
+              </small>
+            </div>
           </div>
           <div className="wealth-summary-stats">
             <Stat
@@ -227,77 +238,59 @@ export function WealthPage() {
             )}
           </div>
         </div>
-        {current && current.grossAssetsCzk > 0 && (
-          <div className="wealth-panel wealth-allocation">
-            <p>ALOKACE AKTIV</p>
-            <div className="wealth-allocation-bar">
-              <span className="btc" style={{ width: `${btcShare * 100}%` }} />
-              <span className="vwce" style={{ width: `${vwceShare * 100}%` }} />
-            </div>
-            <div className="wealth-allocation-legend">
-              <span>
-                <i className="btc" />
-                <b>BTC</b>
-                {Math.round(btcShare * 100)} %
-                <small>· {czk.format(current.btcValueCzk)}</small>
-              </span>
-              <span>
-                <i className="vwce" />
-                <b>VWCE</b>
-                {Math.round(vwceShare * 100)} %
-                <small>· {czk.format(current.vwceValueCzk)}</small>
-              </span>
-            </div>
-          </div>
-        )}
         <div className="wealth-panel wealth-chart-section">
           <header>
-            <div>
-              <p>
-                {chartView === "portfolio"
-                  ? "VÝVOJ PORTFOLIA ZA OBDOBÍ"
-                  : chartView === "net"
-                    ? "VÝVOJ ČISTÉHO JMĚNÍ"
-                    : chartView === "rent"
-                      ? "VÝVOJ MĚSÍČNÍ RENTY"
-                    : `ODHAD ${trendTarget === "portfolio" ? "PORTFOLIA" : "ČISTÉHO JMĚNÍ"} ZA ${trendYears} ${trendYears === 1 ? "ROK" : trendYears === 2 ? "ROKY" : "LET"}`}
-              </p>
-              <strong
-                className={
-                  chartView === "portfolio"
-                    ? change >= 0
-                      ? "positive"
-                      : "negative"
+            <div className="wealth-chart-heading">
+              <div className="wealth-section-icon" aria-hidden="true">
+                <BarChart3 size={18} />
+              </div>
+              <div>
+                <p>
+                  {chartView === "portfolio"
+                    ? "VÝVOJ PORTFOLIA ZA OBDOBÍ"
                     : chartView === "net"
-                      ? (current?.trackedNetWorthCzk ?? 0) >= 0
-                        ? "positive"
-                        : "negative"
+                      ? "VÝVOJ ČISTÉHO JMĚNÍ"
                       : chartView === "rent"
-                        ? "positive"
-                      : (projectedValue ?? 0) >=
-                          (trendTarget === "portfolio"
-                            ? currentValue
-                            : (current?.trackedNetWorthCzk ?? 0))
+                        ? "VÝVOJ MĚSÍČNÍ RENTY"
+                        : `ODHAD ${trendTarget === "portfolio" ? "PORTFOLIA" : "ČISTÉHO JMĚNÍ"} ZA ${trendYears} ${trendYears === 1 ? "ROK" : trendYears === 2 ? "ROKY" : "LET"}`}
+                </p>
+                <strong
+                  className={
+                    chartView === "portfolio"
+                      ? change >= 0
                         ? "positive"
                         : "negative"
-                }
-              >
-                {chartView === "portfolio"
-                  ? points.length > 1
-                    ? signedCzk(change)
-                    : "—"
-                  : chartView === "net"
-                    ? current
-                      ? czk.format(current.trackedNetWorthCzk)
+                      : chartView === "net"
+                        ? (current?.trackedNetWorthCzk ?? 0) >= 0
+                          ? "positive"
+                          : "negative"
+                        : chartView === "rent"
+                          ? "positive"
+                          : (projectedValue ?? 0) >=
+                              (trendTarget === "portfolio"
+                                ? currentValue
+                                : (current?.trackedNetWorthCzk ?? 0))
+                            ? "positive"
+                            : "negative"
+                  }
+                >
+                  {chartView === "portfolio"
+                    ? points.length > 1
+                      ? signedCzk(change)
                       : "—"
-                    : chartView === "rent"
-                      ? vwce.isPending || vwce.isError
-                        ? "—"
-                        : czk.format(currentMonthlyRent)
-                    : projectedValue === undefined
-                      ? "—"
-                      : czk.format(projectedValue)}
-              </strong>
+                    : chartView === "net"
+                      ? current
+                        ? czk.format(current.trackedNetWorthCzk)
+                        : "—"
+                      : chartView === "rent"
+                        ? vwce.isPending || vwce.isError
+                          ? "—"
+                          : czk.format(currentMonthlyRent)
+                        : projectedValue === undefined
+                          ? "—"
+                          : czk.format(projectedValue)}
+                </strong>
+              </div>
             </div>
             <div className="wealth-chart-controls">
               <div
@@ -309,10 +302,11 @@ export function WealthPage() {
                   className={chartView === "portfolio" ? "active" : ""}
                   role="tab"
                   aria-selected={chartView === "portfolio"}
+                  aria-label="Portfolio value"
                   type="button"
                   onClick={() => setChartView("portfolio")}
                 >
-                  Portfolio value
+                  Portfolio
                 </button>
                 <button
                   className={chartView === "net" ? "active" : ""}
@@ -517,6 +511,16 @@ export function WealthPage() {
           )}
         </div>
         <div className="wealth-panel wealth-breakdown">
+          <div className="wealth-breakdown-title">
+            <div className="wealth-section-icon" aria-hidden="true">
+              <Bitcoin size={18} />
+            </div>
+            <div>
+              <p>DETAIL AKTIV</p>
+              <h2>Složení jmění</h2>
+              <span>Množství, nákladová báze a výsledek držených aktiv</span>
+            </div>
+          </div>
           <div className="wealth-breakdown-head">
             <span>Položka</span>
             <span>Hodnota</span>
@@ -534,6 +538,7 @@ export function WealthPage() {
             value={current?.btcValueCzk ?? 0}
             invested={current?.btcCostBasisCzk ?? 0}
             profit={btcProfit}
+            share={btcShare}
           />
           <BreakdownRow
             label="VWCE"
@@ -546,6 +551,7 @@ export function WealthPage() {
             value={current?.vwceValueCzk ?? 0}
             invested={current?.vwceCostBasisCzk ?? 0}
             profit={vwceProfit}
+            share={vwceShare}
           />
           <BreakdownRow
             label="Portfolio"
@@ -730,6 +736,7 @@ function BreakdownRow({
   value,
   invested,
   profit,
+  share,
   className = "",
 }: {
   label: string;
@@ -738,14 +745,25 @@ function BreakdownRow({
   value: number;
   invested?: number;
   profit?: number;
+  share?: number;
   className?: string;
 }) {
   return (
     <div className={`wealth-breakdown-row ${className}`}>
       <span>
         {tone && <i className={tone} />}
-        <b>{label}</b>
-        {detail && <small>· {detail}</small>}
+        <span className="wealth-breakdown-copy">
+          <b>{label}</b>
+          {(detail || share !== undefined) && (
+            <small>
+              {detail}
+              {detail && share !== undefined ? " · " : ""}
+              {share !== undefined
+                ? `${Math.round(share * 100)} % portfolia`
+                : ""}
+            </small>
+          )}
+        </span>
       </span>
       <strong className={value < 0 ? "negative" : ""}>
         {value < 0 ? signedCzk(value) : czk.format(value)}

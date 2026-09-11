@@ -202,6 +202,9 @@ describe("DashboardPage", () => {
     expect(
       await screen.findByText("HODNOTA PORTFOLIA BEZ HOTOVOSTI"),
     ).toBeInTheDocument();
+    expect(screen.queryByText("ALOKACE AKTIV")).not.toBeInTheDocument();
+    expect(screen.getByText(/79 % portfolia/)).toBeInTheDocument();
+    expect(screen.getByText(/21 % portfolia/)).toBeInTheDocument();
     expect(
       screen.getByRole("tab", { name: "Portfolio value" }),
     ).toHaveAttribute("aria-selected", "true");
