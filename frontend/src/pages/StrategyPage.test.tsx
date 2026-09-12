@@ -24,7 +24,8 @@ describe('StrategyPage', () => {
     const router = createTestRouter('/strategy')
     await router.load()
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RouterProvider router={router} /></QueryClientProvider>)
-    const strategyPage = (await screen.findByText('TRIGGER DOSAŽEN')).closest<HTMLElement>('.strategy-page')!
+    const strategyPage = (await screen.findByText('FINÁLNÍ SUMA K PŘEVODU')).closest<HTMLElement>('.strategy-page')!
+    expect(within(strategyPage).getByRole('heading', { name: '20 000 Kč' })).toBeInTheDocument()
     expect(within(strategyPage).getByText('PRODAT')).toBeInTheDocument()
     expect(within(strategyPage).getByText('Trigger překročen')).toBeInTheDocument()
     expect(within(strategyPage).getByRole('progressbar', { name: 'Postup k triggeru' })).toHaveAttribute('aria-valuenow', '100')

@@ -15,7 +15,7 @@ export function StrategyPage() {
   const triggered = data.recommendation === 'PRODAT'
   const progress = Math.min(100, Math.max(0, data.progressPercent))
   const checkpoint = data.checkpointValueCzk ?? data.portfolioValueCzk
-  const statusTitle = triggered ? `Převést ${czk.format(data.recommendedTransferCzk)} do VWCE` : 'Držet pozici'
+  const statusTitle = triggered ? czk.format(data.recommendedTransferCzk) : 'Držet pozici'
   const statusCopy = triggered
     ? 'Profit překročil nastavený trigger. Realizujte pouze doporučenou část a zbytek BTC ponechte v portfoliu.'
     : `Do další realizace zbývá ${czk.format(data.remainingCzk)} zisku nad checkpoint.`
@@ -29,7 +29,7 @@ export function StrategyPage() {
             <span className="strategy-status-badge">{data.recommendation}</span>
           </div>
           <div>
-            <p>{triggered ? 'TRIGGER DOSAŽEN' : 'AKTIVNÍ CHECKPOINT'}</p>
+            <p>{triggered ? 'FINÁLNÍ SUMA K PŘEVODU' : 'AKTIVNÍ CHECKPOINT'}</p>
             <h1 id="strategy-status-title">{statusTitle}</h1>
             <span>{statusCopy}</span>
           </div>

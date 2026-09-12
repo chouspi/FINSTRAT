@@ -33,12 +33,14 @@ public sealed class StrategyService(ApplicationDbContext dbContext, BtcPriceServ
                 connection, householdId, userId, state.ActivatedAt, cancellationToken);
             var checkpoint = Math.Max(0, state.BaseValueCzk + adjustment);
             var profit = portfolioValue - checkpoint;
-            var trigger = Math.Max(settings.CheckpointTriggerFloorCzk,
-                checkpoint * settings.CheckpointTriggerPercent / 100);
-            var triggered = profit >= trigger;
-            var recommended = triggered
-                ? decimal.Floor(profit / settings.RealizationStepProfitCzk) * settings.RealizationStepTransferCzk
-                : 0;
+            var trigger = Math.Max(settings.RealizationStepProfitCzk,
+                Math.Max(settings.CheckpointTriggerFloorCzk,
+                    checkpoint * settings.CheckpointTriggerPercent / 100));
+            var recommended = StrategyRecommendationCalculator.Calculate(
+                portfolioValue, checkpoint, settings.CheckpointTriggerFloorCzk,
+                settings.CheckpointTriggerPercent, settings.RealizationStepProfitCzk,
+                settings.RealizationStepTransferCzk);
+            var triggered = recommended > 0;
             return new(settings, quantity, price.PriceCzk, portfolioValue, true, checkpoint, profit,
                 checkpoint > 0 ? decimal.Round(profit / checkpoint * 100, 2) : 0,
                 trigger, Percent(profit, trigger), Math.Max(0, trigger - profit), recommended,
@@ -200,3 +202,26 @@ public sealed class StrategyService(ApplicationDbContext dbContext, BtcPriceServ
 }
 
 public sealed class StrategyValidationException(string message) : Exception(message);
+
+internal static class StrategyRecommendationCalculator
+{
+    public static decimal Calculate(decimal portfolio, decimal checkpoint, decimal triggerFloor,
+        decimal triggerPercent, decimal profitStep, decimal transferStep)
+    {
+        var profit = portfolio - checkpoint;
+        var fixedTrigger = Math.Max(triggerFloor, profitStep);
+        var triggerRatio = triggerPercent / 100;
+
+        // Equivalent to executing one transfer and recalculating the checkpoint and trigger until no
+        // further cycle is eligible, without allowing user-defined values to create an unbounded loop.
+        var fixedTriggerCycles = EligibleCycles(profit - fixedTrigger, 2 * transferStep);
+        var proportionalTriggerCycles = EligibleCycles(
+            profit - checkpoint * triggerRatio, transferStep * (2 + triggerRatio));
+        var portfolioCycles = decimal.Floor(portfolio / transferStep);
+        var cycles = Math.Min(portfolioCycles, Math.Min(fixedTriggerCycles, proportionalTriggerCycles));
+        return cycles * transferStep;
+    }
+
+    private static decimal EligibleCycles(decimal headroom, decimal erosionPerCycle) =>
+        headroom < 0 ? 0 : decimal.Floor(headroom / erosionPerCycle) + 1;
+}

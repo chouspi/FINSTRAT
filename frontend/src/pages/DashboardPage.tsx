@@ -116,7 +116,7 @@ function StrategyCard({ data, onClick }: { data?: StrategyOverview; onClick: () 
     <div className="dashboard-strategy-main"><span>Hodnota BTC portfolia</span><strong>{valid ? czk.format(data.portfolioValueCzk) : '—'}</strong><small>{valid ? `${data.btcQuantity.toFixed(6)} BTC` : 'Načítám strategii…'}</small></div>
     <div className="dashboard-strategy-status"><div><span>Zisk od checkpointu</span><strong className={data && data.profitCzk < 0 ? 'negative' : undefined}>{valid ? czk.format(data.profitCzk) : '—'}</strong></div><b className={tone}>{recommendation}</b></div>
     <div className="dashboard-strategy-progress"><div><span style={{ width: `${valid ? Math.min(100, Math.max(0, data.progressPercent)) : 0}%` }} /></div><small>{data ? `Trigger ${czk.format(data.triggerCzk)}` : 'Trigger'}</small><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></div>
-    {valid && data.recommendedTransferCzk > 0 && <p>Přesunout do VWCE: <strong>{czk.format(data.recommendedTransferCzk)}</strong></p>}
+    {valid && data.recommendedTransferCzk > 0 && <p>Celkem přesunout do VWCE: <strong>{czk.format(data.recommendedTransferCzk)}</strong></p>}
   </button>
 }
 

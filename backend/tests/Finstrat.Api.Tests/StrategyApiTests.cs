@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Finstrat.Api.Modules.Strategy;
 using Npgsql;
 
 namespace Finstrat.Api.Tests;
@@ -8,6 +9,18 @@ namespace Finstrat.Api.Tests;
 [Collection("identity-api")]
 public sealed class StrategyApiTests(IdentityApiFixture fixture)
 {
+    [Theory]
+    [InlineData(1250000, 250000, 20000, 10, 20000, 10000, 470000)]
+    [InlineData(350000, 250000, 20000, 10, 20000, 5000, 40000)]
+    [InlineData(275000, 250000, 20000, 10, 30000, 10000, 0)]
+    public void Recommendation_aggregates_all_retriggered_realization_cycles(
+        decimal portfolio, decimal checkpoint, decimal triggerFloor, decimal triggerPercent,
+        decimal profitStep, decimal transferStep, decimal expected)
+    {
+        Assert.Equal(expected, StrategyRecommendationCalculator.Calculate(
+            portfolio, checkpoint, triggerFloor, triggerPercent, profitStep, transferStep));
+    }
+
     [Fact]
     public async Task Checkpoint_includes_only_legacy_contributions_and_tracks_purchase_corrections()
     {

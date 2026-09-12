@@ -478,7 +478,7 @@ describe("DashboardPage", () => {
     });
     expect(within(strategyCard).getByText("PRODAT")).toBeInTheDocument();
     expect(
-      within(strategyCard).getByText(/Přesunout do VWCE:/),
+      within(strategyCard).getByText(/Celkem přesunout do VWCE:/),
     ).toBeInTheDocument();
     const bitcoinCard = within(cardGrid).getByRole("button", {
       name: "Otevřít BTC účty",
