@@ -52,7 +52,11 @@ describe('calculateIncomeAllocation', () => {
   })
 
   it('allocates the debt-share surplus above scheduled payments to early payments', () => {
-    const result = calculateIncomeAllocation(50000, 8000, 0, 70, 20, 10, true)
+    const result = calculateIncomeAllocation(50000, 8000, 0, 70, 20, 10, true, {
+      totalDebtBalanceCzk: 8750,
+      withoutDebtBtcPercent: 80,
+      withoutDebtCashPercent: 20,
+    })
 
     expect(result.scheduledApplied).toBe(8000)
     expect(result.freshDebtBudget).toBe(2000)
@@ -62,7 +66,7 @@ describe('calculateIncomeAllocation', () => {
 
   it('caps debt allocation at the real balance and redistributes excess by the debt-free profile', () => {
     const result = calculateIncomeAllocation(10000, 0, 0, 60, 25, 15, true, {
-      eligibleDebtBalanceCzk: 500,
+      totalDebtBalanceCzk: 500,
       withoutDebtBtcPercent: 80,
       withoutDebtCashPercent: 20,
     })
@@ -74,15 +78,15 @@ describe('calculateIncomeAllocation', () => {
     expect(result.btcAmount + result.debtBudget + result.cashAmount).toBe(10000)
   })
 
-  it('subtracts reserved payments from the remaining real debt capacity', () => {
+  it('caps early payments by total debt without subtracting scheduled payments twice', () => {
     const result = calculateIncomeAllocation(10000, 500, 0, 60, 25, 15, true, {
-      eligibleDebtBalanceCzk: 1000,
+      totalDebtBalanceCzk: 1000,
       withoutDebtBtcPercent: 80,
       withoutDebtCashPercent: 20,
     })
 
     expect(result.scheduledApplied).toBe(500)
-    expect(result.debtBudget).toBe(500)
+    expect(result.debtBudget).toBe(1000)
     expect(result.btcAmount + result.cashAmount + result.debtBudget + result.scheduledApplied).toBe(10000)
   })
 })

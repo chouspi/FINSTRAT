@@ -35,6 +35,9 @@ soucet. Pri nizsim prijmu se ignoruji. Pri dostatecnem prijmu se zapocitaji do
 procentni alokace na dluhy a pouze rozdil do cilove dluhove castky se navrhne jako
 predcasna splatka. Pokud planovane splatky cilovou dluhovou castku prevysi, snizi
 alokaci BTC a Cash v jejich vzajemnem pomeru, aby zustala cela rezerva kryta.
+Predcasna cast se omezuje az souctem zustatku vsech aktivnich spotrebitelskych
+dluhu vcetne dluhu s prioritou 0; planovane splatky se od tohoto limitu znovu
+neodecitaji. Mezi jednotlive dluhy se castka dale deli podle jejich priorit.
 Pokud planovane splatky existuji, hlavni karta Dluhy zobrazi zvlast pravidelnou
 rezervu a zvlast vypoctene predcasne splatky. Bez planovanych splatek zustava
 puvodni jednoradkove zobrazeni.

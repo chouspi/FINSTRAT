@@ -337,9 +337,9 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
     : { btc: settings.withoutDebtBtcPercent, debt: 0, cash: settings.withoutDebtCashPercent };
   const deferredBalance = settings.deferredDebtPaymentCzk ?? 0;
   const scheduledDebtPayment = initial.scheduledDebtPaymentCzk ?? 0;
-  const eligibleDebtBalance = initial.debts.filter((debt) => debt.priority > 0).reduce((sum, debt) => sum + debt.balanceCzk, 0);
+  const totalDebtBalance = initial.debts.reduce((sum, debt) => sum + debt.balanceCzk, 0);
   const allocation = calculateIncomeAllocation(validAmount ? amount : 0, scheduledDebtPayment, deferredBalance, percentages.btc, percentages.debt, percentages.cash, hasDebts, {
-    eligibleDebtBalanceCzk: eligibleDebtBalance,
+    totalDebtBalanceCzk: totalDebtBalance,
     withoutDebtBtcPercent: settings.withoutDebtBtcPercent,
     withoutDebtCashPercent: settings.withoutDebtCashPercent,
   });

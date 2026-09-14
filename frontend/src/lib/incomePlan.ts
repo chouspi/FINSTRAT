@@ -10,7 +10,7 @@ export type IncomeAllocation = {
 }
 export type DeferredVwceAllocation = { btcAmount: number; vwceAmount: number }
 export type IncomeAllocationLimits = {
-  eligibleDebtBalanceCzk: number
+  totalDebtBalanceCzk: number
   withoutDebtBtcPercent: number
   withoutDebtCashPercent: number
 }
@@ -100,7 +100,7 @@ export function calculateIncomeAllocation(
   let freshDebtBudget = Math.max(0, targetDebtBudget - scheduledApplied)
   let debtBudget = freshDebtBudget + deferredApplied
   if (hasDebts && limits) {
-    const earlyPaymentCapacity = Math.max(0, limits.eligibleDebtBalanceCzk - scheduledApplied)
+    const earlyPaymentCapacity = Math.max(0, limits.totalDebtBalanceCzk)
     const cappedDebtBudget = Math.min(debtBudget, earlyPaymentCapacity)
     const excessDebtBudget = debtBudget - cappedDebtBudget
     const fallbackTotal = limits.withoutDebtBtcPercent + limits.withoutDebtCashPercent
