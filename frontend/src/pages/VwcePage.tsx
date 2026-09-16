@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronDown, Landmark, Pencil, PiggyBank, Plus, ShieldCheck, Trash2, TriangleAlert, UserRound, WalletCards, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Banknote, CalendarDays, ChevronDown, Landmark, Pencil, PiggyBank, Plus, ShieldCheck, Trash2, TriangleAlert, UserRound, WalletCards, X } from 'lucide-react'
 import { antiforgeryToken, apiRequest } from '../lib/api'
 import { notifyDataChanged } from '../lib/dataRefresh'
 import { createUuid } from '../lib/uuid'
@@ -69,18 +69,18 @@ export function VwcePage() {
   const closeDialog = () => void navigate({ to: '/vwce', search: { dialog: undefined }, replace: true })
   return (
     <section className="vwce-page">
-      <div className="vwce-hero" aria-label="VWCE souhrn">
-        <div className="vwce-portfolio-core">
-          <Landmark size={22} />
-          <span>Hodnota portfolia</span>
-          <strong>{totals.valueCzk === null ? '—' : czkFormatter.format(totals.valueCzk)}</strong>
-          <small>{sharesFormatter.format(data.totals.shares)} ks napříč {data.totals.accountCount} {data.totals.accountCount === 1 ? 'brokerem' : 'brokery'}</small>
-        </div>
-        <div className="vwce-portfolio-metrics">
-          <SummaryItem label="Investováno" value={czkFormatter.format(data.totals.costBasisCzk)} note={data.totals.costBasisComplete ? 'kompletní nákladová báze' : 'část nákupní ceny chybí'} />
-          <SummaryItem label="Zisk / ztráta" value={totals.gainCzk === null ? '—' : signedCzk(totals.gainCzk)} note={totals.gainPercent === null ? undefined : `${percentFormatter.format(totals.gainPercent)} %`} tone={gainTone(totals.gainCzk)} />
-          <SummaryItem label={`Renta ${sharesFormatter.format(data.totals.rentRatePercent)} % p.a.`} value={annualRent === null ? '—' : `${czkFormatter.format(monthlyRent)} / měs.`} note={annualRent === null ? 'čeká na aktuální cenu VWCE' : `ročně ${czkFormatter.format(annualRent)}`} tone={annualRent === null ? undefined : 'positive'} />
-        </div>
+      <RentControlCard
+        monthlyRent={monthlyRent}
+        annualRent={annualRent}
+        rentRatePercent={data.totals.rentRatePercent}
+        rentPoolCzk={data.totals.rentPoolCzk}
+        canPayout={data.accounts.some((account) => account.canManage && account.shares > 0)}
+        onPayout={() => void navigate({ to: '/vwce', search: { dialog: 'payout' } })}
+      />
+      <div className="vwce-portfolio-strip" aria-label="VWCE portfolio">
+        <SummaryItem label="Hodnota portfolia" value={totals.valueCzk === null ? '—' : czkFormatter.format(totals.valueCzk)} note={`${sharesFormatter.format(data.totals.shares)} ks`} />
+        <SummaryItem label="Zisk / ztráta" value={totals.gainCzk === null ? '—' : signedCzk(totals.gainCzk)} note={totals.gainPercent === null ? undefined : `${percentFormatter.format(totals.gainPercent)} %`} tone={gainTone(totals.gainCzk)} />
+        <SummaryItem label="Investováno" value={czkFormatter.format(data.totals.costBasisCzk)} note={data.totals.costBasisComplete ? `${data.totals.accountCount} ${data.totals.accountCount === 1 ? 'broker' : 'brokerů'}` : 'část nákupní ceny chybí'} />
       </div>
       {data.accounts.length === 0 ? (
         <div className="vwce-empty"><div><WalletCards size={25} /></div><h2>Žádné VWCE účty</h2><p>Aktuální identita zatím nevlastní žádný brokerský účet.</p></div>
@@ -118,15 +118,6 @@ export function VwcePage() {
             <VwceAccountMovements accountId={account.id} />
           </details>
         })}</div>
-        <RentControlCard
-          monthlyRent={monthlyRent}
-          annualRent={annualRent}
-          rentRatePercent={data.totals.rentRatePercent}
-          rentPoolCzk={data.totals.rentPoolCzk}
-          payouts={data.recentMovements.filter((movement) => movement.type === 'rent_payout')}
-          canPayout={data.accounts.some((account) => account.canManage && account.shares > 0)}
-          onPayout={() => void navigate({ to: '/vwce', search: { dialog: 'payout' } })}
-        />
       </>}
       {dialog === 'account' && <CreateVwceAccountDialog onClose={closeDialog} />}
       {dialog === 'payout' && (
@@ -145,21 +136,37 @@ export function VwcePage() {
   )
 }
 
-function RentControlCard({ monthlyRent, annualRent, rentRatePercent, rentPoolCzk, payouts, canPayout, onPayout }: {
+function RentControlCard({ monthlyRent, annualRent, rentRatePercent, rentPoolCzk, canPayout, onPayout }: {
   monthlyRent: number; annualRent: number | null; rentRatePercent: number; rentPoolCzk: number
-  payouts: VwceMovement[]; canPayout: boolean; onPayout: () => void
+  canPayout: boolean; onPayout: () => void
 }) {
   const nextRent = monthlyRent + rentPoolCzk
   const willDefer = nextRent < 100
+  const daysToRent = daysUntilNextRent()
   return <section className="vwce-rent-card" aria-labelledby="vwce-rent-heading">
     <div className="vwce-rent-main">
       <div className="vwce-rent-heading"><span><PiggyBank size={20} /></span><div><h2 id="vwce-rent-heading">Renta z portfolia</h2><p>{sharesFormatter.format(rentRatePercent)} % ročně, vypláceno po dosažení bezpečného minima</p></div></div>
-      <div className="vwce-rent-amount"><span>Aktuální měsíční renta</span><strong>{annualRent === null ? '—' : czkFormatter.format(monthlyRent)}</strong><small>{annualRent === null ? 'Čeká na tržní cenu' : `${czkFormatter.format(annualRent)} za rok`}</small></div>
-      <div className="vwce-rent-pool"><div><span>Renta pool</span><strong>{czkFormatter.format(rentPoolCzk)}</strong></div><div className="vwce-rent-pool-track" aria-hidden="true"><i style={{ width: `${Math.min(100, nextRent)}%` }} /></div><p><ShieldCheck size={14} /> {willDefer ? `Další renta se odloží. Do minima chybí ${czkFormatter.format(100 - nextRent)}.` : `K výplatě je připraveno ${czkFormatter.format(nextRent)}.`}</p></div>
+      <div className="vwce-rent-amount"><span>Měsíční renta</span><strong>{annualRent === null ? '—' : czkFormatter.format(monthlyRent)}</strong><small>{annualRent === null ? 'Čeká na tržní cenu' : `${czkFormatter.format(annualRent)} za rok`}</small></div>
+      <div className="vwce-rent-countdown"><CalendarDays size={22} /><div><span>Do další renty</span><strong>{daysToRent === 0 ? 'Dnes' : `${daysToRent} ${dayLabel(daysToRent)}`}</strong><small>výplatní den je 1. v měsíci</small></div></div>
+      {monthlyRent < 100 && <div className="vwce-rent-pool"><div><span>Renta pool</span><strong>{czkFormatter.format(rentPoolCzk)}</strong></div><div className="vwce-rent-pool-track" aria-hidden="true"><i style={{ width: `${Math.min(100, nextRent)}%` }} /></div><p><ShieldCheck size={14} /> {willDefer ? `Další renta se odloží. Do minima chybí ${czkFormatter.format(100 - nextRent)}.` : `K výplatě je připraveno ${czkFormatter.format(nextRent)}.`}</p></div>}
       <button type="button" disabled={!canPayout || monthlyRent <= 0} onClick={onPayout}><Banknote size={16} />{willDefer ? 'Odložit měsíční rentu' : `Vyplatit ${czkFormatter.format(nextRent)}`}</button>
     </div>
-    <div className="vwce-rent-recent"><h3>Poslední výplaty</h3>{payouts.length === 0 ? <p>Zatím bez výplat. Malé částky se bezpečně skládají v poolu.</p> : payouts.slice(0, 3).map((payout) => <div key={payout.id}><span><strong>{payout.accountName}</strong><time>{dateFormatter.format(new Date(payout.occurredAt))}</time></span><b>{czkFormatter.format(payout.proceedsCzk ?? 0)}</b></div>)}</div>
   </section>
+}
+
+function daysUntilNextRent() {
+  const today = new Date()
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const nextRent = today.getDate() === 1
+    ? startOfToday
+    : new Date(today.getFullYear(), today.getMonth() + 1, 1)
+  return Math.round((nextRent.getTime() - startOfToday.getTime()) / 86_400_000)
+}
+
+function dayLabel(days: number) {
+  if (days === 1) return 'den'
+  if (days >= 2 && days <= 4) return 'dny'
+  return 'dní'
 }
 
 function CreateVwcePurchaseDialog({ account, currentPriceCzk, onClose }: { account: VwceAccount; currentPriceCzk: number | null; onClose: () => void }) {
