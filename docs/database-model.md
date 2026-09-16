@@ -63,6 +63,10 @@ Odlozena realizace je `deferred_vwce_obligations`; jeji cerpani je vazebni
 tabulka na konkretni VWCE lot. `original = allocated + cancelled + remaining`
 se pri zapisu musi kontrolovat v jedne databazove transakci se zamkem radku.
 
+Nevyplacena mala renta se drzi per uzivatel v `vwce_rent_pools`. Radek se pri
+zpracovani renty zamyka a vyplata pod 100 Kc se pouze pricte do poolu. Prodej
+VWCE a vynulovani poolu probiha atomicky az po dosazeni minima.
+
 ### Dluhy
 
 `debts` drzi identitu smlouvy, nikoliv menitelny zustatek. `debt_entries` je

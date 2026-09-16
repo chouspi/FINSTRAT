@@ -11,7 +11,8 @@ public sealed record VwceTotalsResponse(
     int AccountCount,
     bool CostBasisComplete,
     int ProvisionalLotCount,
-    decimal RentRatePercent);
+    decimal RentRatePercent,
+    decimal RentPoolCzk);
 
 public sealed record VwceAccountResponse(
     Guid Id,
@@ -78,10 +79,13 @@ public sealed record CreateVwcePayoutRequest(
     string? Note);
 
 public sealed record CreateVwcePayoutResponse(
-    Guid Id,
+    Guid? Id,
     Guid AccountId,
+    decimal RequestedAmountCzk,
     decimal AmountCzk,
     decimal Shares,
     decimal UnitPriceCzk,
     DateTime PaidAt,
-    string Note);
+    string Note,
+    bool Deferred,
+    decimal RentPoolCzk);

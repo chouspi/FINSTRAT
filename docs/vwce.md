@@ -22,11 +22,14 @@ Pokud cena neni dostupna, hodnota a zisk zustanou nezname a renta se po vzoru
 legacy aplikace pocita z porizovaci ceny.
 
 `POST /api/vwce/accounts` vytvari owner-scoped broker ucet. Vyplata renty pres
-`POST /api/vwce/payouts` vyzaduje `Idempotency-Key`, prepocita zadanou CZK
-castku aktualni cenou na podily a materializuje FIFO alokace v
-`vwce_lot_allocations`. Vyplata proto snizi podily, FIFO porizovaci cenu i
-nasledujici vypocet renty. Pri vice broker uctech musi uzivatel zvolit ucet,
-ze ktereho se podily prodavaji.
+`POST /api/vwce/payouts` vyzaduje `Idempotency-Key`. Pozadovana castka se nejprve
+secte s osobnim `vwce_rent_pools.amount_czk`. Dokud soucet nedosahne 100 Kc,
+endpoint nevytvori prodej a vrati `deferred: true`; castka zustane v poolu pro
+pozdejsi rentu. Po dosazeni minima se cely pool prepocita aktualni cenou na
+podily, pool se v teze transakci vynuluje a materializuji se FIFO alokace v
+`vwce_lot_allocations`. Zaokrouhleni prodavanych podilu smerem nahoru garantuje,
+ze skutecny vynos z prodeje neni mensi nez 100 Kc. Pri vice broker uctech musi
+uzivatel zvolit ucet, ze ktereho se podily prodavaji.
 
 V detailu spravovatelneho brokera lze pridat nakup pres
 `POST /api/vwce/accounts/{accountId}/purchases`. Endpoint vyzaduje

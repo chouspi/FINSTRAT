@@ -97,6 +97,7 @@ public sealed class VwceQueryService(ApplicationDbContext dbContext)
             var accounts = await ReadAccountsAsync(connection, householdId, userId, cancellationToken);
             var movements = await ReadMovementsAsync(connection, householdId, userId, cancellationToken);
             var rentRatePercent = await ReadRentRateAsync(connection, householdId, userId, cancellationToken);
+            var rentPoolCzk = await ReadRentPoolAsync(connection, householdId, userId, cancellationToken);
             return new VwceOverviewResponse(
                 new VwceTotalsResponse(
                     accounts.Sum(account => account.Shares),
@@ -104,7 +105,8 @@ public sealed class VwceQueryService(ApplicationDbContext dbContext)
                     accounts.Count,
                     accounts.All(account => account.CostBasisComplete),
                     accounts.Sum(account => account.ProvisionalLotCount),
-                    rentRatePercent),
+                    rentRatePercent,
+                    rentPoolCzk),
                 accounts,
                 movements);
         }
@@ -112,6 +114,21 @@ public sealed class VwceQueryService(ApplicationDbContext dbContext)
         {
             if (shouldClose) await connection.CloseAsync();
         }
+    }
+
+    private static async Task<decimal> ReadRentPoolAsync(
+        NpgsqlConnection connection,
+        Guid householdId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            SELECT amount_czk FROM vwce_rent_pools
+            WHERE household_id = @household_id AND owner_user_id = @user_id
+            """, connection);
+        command.Parameters.AddWithValue("household_id", householdId);
+        command.Parameters.AddWithValue("user_id", userId);
+        return await command.ExecuteScalarAsync(cancellationToken) is decimal amount ? amount : 0m;
     }
 
     private static async Task<decimal> ReadRentRateAsync(

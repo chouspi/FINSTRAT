@@ -180,7 +180,7 @@ public static class VwceEndpoints
                 var (householdId, userId) = CurrentContext(principal, userManager);
                 var response = await commandService.CreatePayoutAsync(
                     householdId, userId, idempotencyKey, request, cancellationToken);
-                return Results.Created($"/api/vwce/payouts/{response.Id}", response);
+                return Results.Created(response.Id is null ? "/api/vwce/overview" : $"/api/vwce/payouts/{response.Id}", response);
             }
             catch (VwceValidationException exception)
             {

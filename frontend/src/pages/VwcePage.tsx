@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronDown, Landmark, Pencil, Plus, Trash2, TriangleAlert, UserRound, WalletCards, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronDown, Landmark, Pencil, PiggyBank, Plus, ShieldCheck, Trash2, TriangleAlert, UserRound, WalletCards, X } from 'lucide-react'
 import { antiforgeryToken, apiRequest } from '../lib/api'
 import { notifyDataChanged } from '../lib/dataRefresh'
 import { createUuid } from '../lib/uuid'
@@ -9,7 +9,7 @@ import { dateToIsoTimestamp, formatCzechDate, parseCzechDate, todayIsoDate } fro
 import './VwcePage.css'
 
 type VwceOverview = {
-  totals: { shares: number; costBasisCzk: number; accountCount: number; costBasisComplete: boolean; provisionalLotCount: number; rentRatePercent: number }
+  totals: { shares: number; costBasisCzk: number; accountCount: number; costBasisComplete: boolean; provisionalLotCount: number; rentRatePercent: number; rentPoolCzk: number }
   accounts: VwceAccount[]
   recentMovements: VwceMovement[]
 }
@@ -24,6 +24,9 @@ type VwceMovement = {
   id: string; accountId: string; accountName: string; type: string; shares: number
   unitPriceCzk: number | null; proceedsCzk: number | null; occurredAt: string; note: string | null
   canEdit?: boolean; canDelete?: boolean
+}
+type VwcePayoutResult = {
+  id: string | null; requestedAmountCzk: number; amountCzk: number; deferred: boolean; rentPoolCzk: number
 }
 
 const sharesFormatter = new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 8 })
@@ -66,30 +69,18 @@ export function VwcePage() {
   const closeDialog = () => void navigate({ to: '/vwce', search: { dialog: undefined }, replace: true })
   return (
     <section className="vwce-page">
-      <div className="vwce-summary" aria-label="VWCE souhrn">
-        <SummaryItem
-          label="Celkem akcií"
-          value={`${sharesFormatter.format(data.totals.shares)} ks`}
-          note={`${data.totals.accountCount} ${data.totals.accountCount === 1 ? 'broker' : 'brokerů'}`}
-          strong
-        />
-        <SummaryItem
-          label="Hodnota portfolia"
-          value={totals.valueCzk === null ? '—' : czkFormatter.format(totals.valueCzk)}
-          note={`investováno ${czkFormatter.format(data.totals.costBasisCzk)}${data.totals.costBasisComplete ? '' : ' · část ceny chybí'}`}
-        />
-        <SummaryItem
-          label="Zisk / ztráta"
-          value={totals.gainCzk === null ? '—' : signedCzk(totals.gainCzk)}
-          note={totals.gainPercent === null ? undefined : `${percentFormatter.format(totals.gainPercent)} %`}
-          tone={gainTone(totals.gainCzk)}
-        />
-        <SummaryItem
-          label={`Renta ${sharesFormatter.format(data.totals.rentRatePercent)} % p.a.`}
-          value={annualRent === null ? '—' : `${czkFormatter.format(monthlyRent)} / měs.`}
-          note={annualRent === null ? 'čeká na aktuální cenu VWCE' : `ročně ${czkFormatter.format(annualRent)}`}
-          tone={annualRent === null ? undefined : "positive"}
-        />
+      <div className="vwce-hero" aria-label="VWCE souhrn">
+        <div className="vwce-portfolio-core">
+          <Landmark size={22} />
+          <span>Hodnota portfolia</span>
+          <strong>{totals.valueCzk === null ? '—' : czkFormatter.format(totals.valueCzk)}</strong>
+          <small>{sharesFormatter.format(data.totals.shares)} ks napříč {data.totals.accountCount} {data.totals.accountCount === 1 ? 'brokerem' : 'brokery'}</small>
+        </div>
+        <div className="vwce-portfolio-metrics">
+          <SummaryItem label="Investováno" value={czkFormatter.format(data.totals.costBasisCzk)} note={data.totals.costBasisComplete ? 'kompletní nákladová báze' : 'část nákupní ceny chybí'} />
+          <SummaryItem label="Zisk / ztráta" value={totals.gainCzk === null ? '—' : signedCzk(totals.gainCzk)} note={totals.gainPercent === null ? undefined : `${percentFormatter.format(totals.gainPercent)} %`} tone={gainTone(totals.gainCzk)} />
+          <SummaryItem label={`Renta ${sharesFormatter.format(data.totals.rentRatePercent)} % p.a.`} value={annualRent === null ? '—' : `${czkFormatter.format(monthlyRent)} / měs.`} note={annualRent === null ? 'čeká na aktuální cenu VWCE' : `ročně ${czkFormatter.format(annualRent)}`} tone={annualRent === null ? undefined : 'positive'} />
+        </div>
       </div>
       {data.accounts.length === 0 ? (
         <div className="vwce-empty"><div><WalletCards size={25} /></div><h2>Žádné VWCE účty</h2><p>Aktuální identita zatím nevlastní žádný brokerský účet.</p></div>
@@ -127,17 +118,15 @@ export function VwcePage() {
             <VwceAccountMovements accountId={account.id} />
           </details>
         })}</div>
-        <div className="vwce-section-title vwce-history-title">HISTORIE</div>
-        <div className="vwce-movements">{data.recentMovements.length === 0 ? <p>Žádné pohyby.</p> : data.recentMovements.map((movement) => {
-          const incoming = movement.shares > 0
-          const Icon = incoming ? ArrowDownLeft : ArrowUpRight
-          return <div className="vwce-movement" key={`${movement.type}-${movement.id}`}>
-            <span className={incoming ? 'vwce-movement-in' : 'vwce-movement-out'}><Icon size={15} /></span>
-            <div><strong>{movementLabel(movement.type)}</strong><small>{movement.accountName}{movement.note ? ` · ${movement.note}` : ''}</small></div>
-            <time>{dateFormatter.format(new Date(movement.occurredAt))}</time>
-            <strong className={incoming ? 'quantity-in' : 'quantity-out'}>{incoming ? '+' : ''}{sharesFormatter.format(movement.shares)} ks</strong>
-          </div>
-        })}</div>
+        <RentControlCard
+          monthlyRent={monthlyRent}
+          annualRent={annualRent}
+          rentRatePercent={data.totals.rentRatePercent}
+          rentPoolCzk={data.totals.rentPoolCzk}
+          payouts={data.recentMovements.filter((movement) => movement.type === 'rent_payout')}
+          canPayout={data.accounts.some((account) => account.canManage && account.shares > 0)}
+          onPayout={() => void navigate({ to: '/vwce', search: { dialog: 'payout' } })}
+        />
       </>}
       {dialog === 'account' && <CreateVwceAccountDialog onClose={closeDialog} />}
       {dialog === 'payout' && (
@@ -145,6 +134,7 @@ export function VwcePage() {
           accounts={data.accounts.filter((account) => account.canManage)}
           monthlyRent={monthlyRent}
           rentRatePercent={data.totals.rentRatePercent}
+          rentPoolCzk={data.totals.rentPoolCzk}
           onClose={closeDialog}
         />
       )}
@@ -153,6 +143,23 @@ export function VwcePage() {
       {purchaseAccount && <CreateVwcePurchaseDialog account={purchaseAccount} currentPriceCzk={priceCzk} onClose={() => setPurchaseAccount(null)} />}
     </section>
   )
+}
+
+function RentControlCard({ monthlyRent, annualRent, rentRatePercent, rentPoolCzk, payouts, canPayout, onPayout }: {
+  monthlyRent: number; annualRent: number | null; rentRatePercent: number; rentPoolCzk: number
+  payouts: VwceMovement[]; canPayout: boolean; onPayout: () => void
+}) {
+  const nextRent = monthlyRent + rentPoolCzk
+  const willDefer = nextRent < 100
+  return <section className="vwce-rent-card" aria-labelledby="vwce-rent-heading">
+    <div className="vwce-rent-main">
+      <div className="vwce-rent-heading"><span><PiggyBank size={20} /></span><div><h2 id="vwce-rent-heading">Renta z portfolia</h2><p>{sharesFormatter.format(rentRatePercent)} % ročně, vypláceno po dosažení bezpečného minima</p></div></div>
+      <div className="vwce-rent-amount"><span>Aktuální měsíční renta</span><strong>{annualRent === null ? '—' : czkFormatter.format(monthlyRent)}</strong><small>{annualRent === null ? 'Čeká na tržní cenu' : `${czkFormatter.format(annualRent)} za rok`}</small></div>
+      <div className="vwce-rent-pool"><div><span>Renta pool</span><strong>{czkFormatter.format(rentPoolCzk)}</strong></div><div className="vwce-rent-pool-track" aria-hidden="true"><i style={{ width: `${Math.min(100, nextRent)}%` }} /></div><p><ShieldCheck size={14} /> {willDefer ? `Další renta se odloží. Do minima chybí ${czkFormatter.format(100 - nextRent)}.` : `K výplatě je připraveno ${czkFormatter.format(nextRent)}.`}</p></div>
+      <button type="button" disabled={!canPayout || monthlyRent <= 0} onClick={onPayout}><Banknote size={16} />{willDefer ? 'Odložit měsíční rentu' : `Vyplatit ${czkFormatter.format(nextRent)}`}</button>
+    </div>
+    <div className="vwce-rent-recent"><h3>Poslední výplaty</h3>{payouts.length === 0 ? <p>Zatím bez výplat. Malé částky se bezpečně skládají v poolu.</p> : payouts.slice(0, 3).map((payout) => <div key={payout.id}><span><strong>{payout.accountName}</strong><time>{dateFormatter.format(new Date(payout.occurredAt))}</time></span><b>{czkFormatter.format(payout.proceedsCzk ?? 0)}</b></div>)}</div>
+  </section>
 }
 
 function CreateVwcePurchaseDialog({ account, currentPriceCzk, onClose }: { account: VwceAccount; currentPriceCzk: number | null; onClose: () => void }) {
@@ -279,17 +286,18 @@ function CreateVwceAccountDialog({ onClose }: { onClose: () => void }) {
   )
 }
 
-function VwcePayoutDialog({ accounts, monthlyRent, rentRatePercent, onClose }: {
+function VwcePayoutDialog({ accounts, monthlyRent, rentRatePercent, rentPoolCzk, onClose }: {
   accounts: VwceAccount[]
   monthlyRent: number
   rentRatePercent: number
+  rentPoolCzk: number
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
   const idempotencyKey = useRef(createUuid())
   const accountsWithShares = accounts.filter((account) => account.shares > 0)
   const [accountId, setAccountId] = useState(accountsWithShares[0]?.id ?? accounts[0]?.id ?? '')
-  const [amountCzk, setAmountCzk] = useState(() => String(Math.round(monthlyRent)))
+  const [amountCzk, setAmountCzk] = useState(() => monthlyRent.toFixed(2))
   const [paidAt, setPaidAt] = useState(() => formatCzechDate(todayIsoDate()))
   const [note, setNote] = useState('')
   const selectedAccount = accounts.find((account) => account.id === accountId)
@@ -299,7 +307,7 @@ function VwcePayoutDialog({ accounts, monthlyRent, rentRatePercent, onClose }: {
       const payoutDate = parseCzechDate(paidAt)
       if (!payoutDate) throw new Error('Datum musí být ve formátu DD.MM.RRRR.')
       const token = await antiforgeryToken()
-      await apiRequest('/api/vwce/payouts', {
+      return apiRequest<VwcePayoutResult>('/api/vwce/payouts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -309,10 +317,10 @@ function VwcePayoutDialog({ accounts, monthlyRent, rentRatePercent, onClose }: {
         body: JSON.stringify({ accountId, amountCzk, paidAt: dateToIsoTimestamp(payoutDate), note: note || null }),
       })
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ['vwce', 'overview'] })
       notifyDataChanged()
-      onClose()
+      if (!result.deferred) onClose()
     },
   })
 
@@ -328,13 +336,15 @@ function VwcePayoutDialog({ accounts, monthlyRent, rentRatePercent, onClose }: {
         <label>Datum výplaty<input inputMode="numeric" pattern="\d{1,2}\.\d{1,2}\.\d{4}" placeholder="DD.MM.RRRR" value={paidAt} onChange={(event) => setPaidAt(event.target.value)} required /></label>
         <label>Poznámka <small>volitelné</small><input value={note} maxLength={500} placeholder="auto-vyplní se" onChange={(event) => setNote(event.target.value)} /></label>
         {selectedAccount && amount > 0 && <p className="vwce-payout-balance">Dostupný účet: <strong>{selectedAccount.name} · {sharesFormatter.format(selectedAccount.shares)} ks</strong></p>}
+        {amount > 0 && <div className="vwce-payout-pool"><span>Po započtení poolu</span><strong>{czkFormatter.format(amount + rentPoolCzk)}</strong><small>{amount + rentPoolCzk < 100 ? 'Částka se zatím neprodá a zůstane na později.' : 'Pool se vyčerpá a proběhne výplata.'}</small></div>}
         {accounts.length === 0 && <p className="form-error">Nejdřív vytvořte broker účet.</p>}
         {mutation.error && <p className="form-error" role="alert">{mutation.error.message}</p>}
+        {mutation.data?.deferred && <p className="vwce-payout-deferred" role="status"><ShieldCheck size={16} /> Renta byla odložena. V poolu je nyní <strong>{czkFormatter.format(mutation.data.rentPoolCzk)}</strong>.</p>}
         <div className="vwce-dialog-actions">
-          <button type="button" onClick={onClose}>Zrušit</button>
-          <button className="vwce-payout-confirm" type="submit" disabled={mutation.isPending || !accountId || !Number.isFinite(amount) || amount <= 0}>
-            <Banknote size={15} /> {mutation.isPending ? 'Ukládám…' : 'Potvrdit výplatu'}
-          </button>
+          <button type="button" onClick={onClose}>{mutation.data?.deferred ? 'Zavřít' : 'Zrušit'}</button>
+          {!mutation.data?.deferred && <button className="vwce-payout-confirm" type="submit" disabled={mutation.isPending || !accountId || !Number.isFinite(amount) || amount <= 0}>
+            <Banknote size={15} /> {mutation.isPending ? 'Ukládám…' : amount + rentPoolCzk < 100 ? 'Odložit do poolu' : 'Potvrdit výplatu'}
+          </button>}
         </div>
       </form>
     </VwceDialog>
@@ -345,8 +355,8 @@ function VwceDialog({ title, kicker, onClose, children }: { title: string; kicke
   return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="vwce-dialog" role="dialog" aria-modal="true" aria-labelledby="vwce-dialog-title"><button className="dialog-close" type="button" aria-label="Zavřít" onClick={onClose}><X size={18} /></button><p>{kicker}</p><h2 id="vwce-dialog-title">{title}</h2>{children}</section></div>
 }
 
-function SummaryItem({ label, value, note, strong, tone }: { label: string; value: string; note?: string; strong?: boolean; tone?: 'positive' | 'negative' }) {
-  return <div className={`vwce-summary-item${strong ? ' vwce-summary-item--strong' : ''}`}><span>{label}</span><strong className={tone}>{value}</strong>{note && <small className={tone}>{note}</small>}</div>
+function SummaryItem({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: 'positive' | 'negative' }) {
+  return <div className="vwce-summary-item"><span>{label}</span><strong className={tone}>{value}</strong>{note && <small className={tone}>{note}</small>}</div>
 }
 
 function validPrice(value: number | undefined) {

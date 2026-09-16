@@ -13,7 +13,7 @@ describe('VwcePage', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          totals: { shares: 0.0139, costBasisCzk: 53.54, accountCount: 1, costBasisComplete: true, provisionalLotCount: 0, rentRatePercent: 2 },
+          totals: { shares: 0.0139, costBasisCzk: 53.54, accountCount: 1, costBasisComplete: true, provisionalLotCount: 0, rentRatePercent: 2, rentPoolCzk: 40 },
           accounts: [{
             id: 'xtb', name: 'XTB', description: null, ownerDisplayName: 'Samuel', shares: 0.0139,
             costBasisCzk: 53.54, costBasisComplete: true, lotCount: 1, disposalCount: 0,
@@ -38,7 +38,7 @@ describe('VwcePage', () => {
       }] } as Response
       if (url.endsWith('/identity/antiforgery')) return { ok: true, status: 200, json: async () => ({ token: 'csrf-token' }) } as Response
       if (url.endsWith('/vwce/accounts')) return { ok: true, status: 201, json: async () => ({ id: 'new-account' }) } as Response
-      if (url.endsWith('/vwce/payouts')) return { ok: true, status: 201, json: async () => ({ id: 'payout' }) } as Response
+      if (url.endsWith('/vwce/payouts')) return { ok: true, status: 201, json: async () => ({ id: null, requestedAmountCzk: 10, amountCzk: 0, deferred: true, rentPoolCzk: 50 }) } as Response
       if (url.endsWith('/vwce/accounts/xtb/purchases')) return { ok: true, status: 201, json: async () => ({ id: 'new-purchase' }) } as Response
       if (url.endsWith('/default-share')) return { ok: true, status: 204 } as Response
       if (url.endsWith('/vwce/accounts/xtb')) return init?.method === 'DELETE'
@@ -52,7 +52,7 @@ describe('VwcePage', () => {
 
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-  it('renders owner-scoped VWCE totals, broker and history', async () => {
+  it('renders owner-scoped VWCE totals, broker and rent controls', async () => {
     const user = userEvent.setup()
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const router = createTestRouter('/vwce')
@@ -65,6 +65,9 @@ describe('VwcePage', () => {
     expect(screen.getByText('Hodnota portfolia')).toBeInTheDocument()
     expect(screen.getAllByText('Zisk / ztráta')).toHaveLength(2)
     expect(screen.getByText('Renta 2 % p.a.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Renta z portfolia' })).toBeInTheDocument()
+    expect(screen.getByText('Renta pool')).toBeInTheDocument()
+    expect(screen.getByText(/Do minima chybí/)).toBeInTheDocument()
     expect(screen.queryByText('Cena VWCE')).not.toBeInTheDocument()
     expect(screen.getAllByText(/56[  ]Kč/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/\+2[  ]Kč/).length).toBeGreaterThan(0)
@@ -72,7 +75,7 @@ describe('VwcePage', () => {
     const broker = screen.getAllByText('XTB')[0].closest('details') as HTMLElement
     await user.click(screen.getByText('Bez popisu'))
     expect(broker).toHaveAttribute('open')
-    expect(screen.getByText(/Investováno/)).toBeVisible()
+    expect(within(broker).getByText(/Investováno/)).toBeVisible()
     expect(screen.getByText('Nákup na XTB')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Přidat nákup' }))
     const purchaseDialog = screen.getByRole('dialog', { name: 'Přidat nákup · XTB' })
@@ -111,7 +114,7 @@ describe('VwcePage', () => {
     const router = createTestRouter('/vwce')
     await router.load()
     render(<QueryClientProvider client={queryClient}><RouterProvider router={router} /></QueryClientProvider>)
-    await screen.findByText('Celkem akcií')
+    await screen.findByText('Hodnota portfolia')
 
     await user.click(screen.getByRole('button', { name: 'Nový účet' }))
     expect(screen.getByRole('dialog', { name: 'Nový broker účet' })).toBeVisible()
@@ -126,7 +129,7 @@ describe('VwcePage', () => {
     await user.clear(amount)
     await user.type(amount, '10')
     await user.type(screen.getByLabelText(/Poznámka/), 'Měsíční renta')
-    await user.click(screen.getByRole('button', { name: 'Potvrdit výplatu' }))
+    await user.click(screen.getByRole('button', { name: 'Odložit do poolu' }))
 
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([input, options]) => {
       if (!String(input).endsWith('/vwce/payouts') || options?.method !== 'POST') return false
@@ -135,5 +138,6 @@ describe('VwcePage', () => {
         && typeof headers['Idempotency-Key'] === 'string'
         && JSON.parse(String(options.body)).amountCzk === '10'
     })).toBe(true))
+    expect(await screen.findByText(/Renta byla odložena/)).toBeVisible()
   })
 })

@@ -13,6 +13,8 @@ namespace Finstrat.Api.Modules.Vwce;
 
 public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePriceService priceService)
 {
+    private const decimal MinimumPayoutCzk = 100m;
+
     public async Task<CreateVwceAccountResponse> CreateAccountAsync(
         Guid householdId,
         Guid userId,
@@ -61,22 +63,15 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
         CancellationToken cancellationToken)
     {
         if (!decimal.TryParse(request.AmountCzk, NumberStyles.Number, CultureInfo.InvariantCulture, out var requestedAmount)
-            || requestedAmount <= 0)
-            throw new VwceValidationException("Částka k výplatě musí být kladné číslo.");
+            || requestedAmount <= 0 || decimal.Round(requestedAmount, 2) != requestedAmount)
+            throw new VwceValidationException("Částka k výplatě musí být kladné číslo s nejvýše 2 desetinnými místy.");
         if (!DateTimeOffset.TryParse(request.PaidAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedAt))
             throw new VwceValidationException("Datum výplaty není platné.");
         var paidAt = parsedAt.UtcDateTime;
         if (paidAt.Date > DateTime.UtcNow.Date) throw new VwceValidationException("Datum výplaty nemůže být v budoucnosti.");
 
-        var marketPrice = await priceService.GetAsync(cancellationToken);
-        var unitPriceCzk = decimal.Round(marketPrice.PriceCzk, 2, MidpointRounding.ToEven);
-        var shares = decimal.Round(requestedAmount / unitPriceCzk, 8, MidpointRounding.ToEven);
-        if (shares <= 0) throw new VwceValidationException("Částka je příliš nízká pro výpočet prodávaných podílů.");
-        var proceedsCzk = decimal.Round(shares * unitPriceCzk, 2, MidpointRounding.ToEven);
-        var note = string.IsNullOrWhiteSpace(request.Note)
-            ? $"Výplata renty – prodej {shares:0.########} ks"
-            : request.Note.Trim();
-        if (note.Length > 500) throw new VwceValidationException("Poznámka může mít nejvýše 500 znaků.");
+        var requestedNote = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+        if (requestedNote?.Length > 500) throw new VwceValidationException("Poznámka může mít nejvýše 500 znaků.");
 
         var requestHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request))));
         var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
@@ -98,6 +93,31 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
                 connection, transaction, householdId, request.AccountId, cancellationToken);
             if (latestActivity is not null && paidAt < latestActivity)
                 throw new VwceValidationException("Výplatu nelze vložit před novější pohyb na účtu.");
+
+            var pooledAmount = await LockRentPoolAsync(
+                connection, transaction, householdId, userId, cancellationToken);
+            var payoutAmount = decimal.Round(pooledAmount + requestedAmount, 2, MidpointRounding.ToEven);
+            if (payoutAmount < MinimumPayoutCzk)
+            {
+                await UpdateRentPoolAsync(
+                    connection, transaction, householdId, userId, payoutAmount, cancellationToken);
+                var deferredResponse = new CreateVwcePayoutResponse(
+                    null, request.AccountId, requestedAmount, 0m, 0m, 0m, paidAt,
+                    requestedNote ?? "Renta odložena do poolu", true, payoutAmount);
+                await CompleteIdempotencyAsync(
+                    connection, transaction, householdId, idempotencyKey, deferredResponse, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return deferredResponse;
+            }
+
+            var marketPrice = await priceService.GetAsync(cancellationToken);
+            var unitPriceCzk = decimal.Round(marketPrice.PriceCzk, 2, MidpointRounding.ToEven);
+            var shares = decimal.Ceiling(payoutAmount / unitPriceCzk * 100_000_000m) / 100_000_000m;
+            if (shares <= 0) throw new VwceValidationException("Částka je příliš nízká pro výpočet prodávaných podílů.");
+            var proceedsCzk = decimal.Round(shares * unitPriceCzk, 2, MidpointRounding.ToEven);
+            if (proceedsCzk < MinimumPayoutCzk)
+                throw new VwceValidationException("Výplata renty musí být alespoň 100 Kč.");
+            var note = requestedNote ?? $"Výplata renty – prodej {shares:0.########} ks";
             var chunks = await AllocateLotsAsync(
                 connection, transaction, householdId, request.AccountId, shares, paidAt, cancellationToken);
 
@@ -149,8 +169,12 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
                 await allocation.ExecuteNonQueryAsync(cancellationToken);
             }
 
+            await UpdateRentPoolAsync(
+                connection, transaction, householdId, userId, 0m, cancellationToken);
+
             var response = new CreateVwcePayoutResponse(
-                id, request.AccountId, proceedsCzk, shares, unitPriceCzk, paidAt, note);
+                id, request.AccountId, requestedAmount, proceedsCzk, shares, unitPriceCzk,
+                paidAt, note, false, 0m);
             await CompleteIdempotencyAsync(
                 connection, transaction, householdId, idempotencyKey, response, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -161,6 +185,45 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
             await transaction.RollbackAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    private static async Task<decimal> LockRentPoolAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid householdId,
+        Guid userId, CancellationToken cancellationToken)
+    {
+        await using (var insert = new NpgsqlCommand("""
+            INSERT INTO vwce_rent_pools (household_id, owner_user_id)
+            VALUES (@household_id, @user_id)
+            ON CONFLICT (household_id, owner_user_id) DO NOTHING
+            """, connection, transaction))
+        {
+            insert.Parameters.AddWithValue("household_id", householdId);
+            insert.Parameters.AddWithValue("user_id", userId);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var select = new NpgsqlCommand("""
+            SELECT amount_czk FROM vwce_rent_pools
+            WHERE household_id = @household_id AND owner_user_id = @user_id
+            FOR UPDATE
+            """, connection, transaction);
+        select.Parameters.AddWithValue("household_id", householdId);
+        select.Parameters.AddWithValue("user_id", userId);
+        return (decimal)(await select.ExecuteScalarAsync(cancellationToken) ?? 0m);
+    }
+
+    private static async Task UpdateRentPoolAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid householdId,
+        Guid userId, decimal amountCzk, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            UPDATE vwce_rent_pools SET amount_czk = @amount_czk, updated_at = now()
+            WHERE household_id = @household_id AND owner_user_id = @user_id
+            """, connection, transaction);
+        command.Parameters.AddWithValue("household_id", householdId);
+        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("amount_czk", amountCzk);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<UpdateVwceAccountResponse> UpdateAccountAsync(

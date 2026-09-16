@@ -243,6 +243,78 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
     }
 
     [Fact]
+    public async Task Small_rent_is_pooled_until_payout_reaches_one_hundred_czk()
+    {
+        using var client = fixture.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            HandleCookies = true,
+        });
+        var token = await GetAntiforgeryToken(client);
+        using var create = new HttpRequestMessage(HttpMethod.Post, "/api/vwce/accounts")
+        {
+            Content = JsonContent.Create(new { name = $"Rent pool broker {Guid.NewGuid():N}", description = (string?)null }),
+        };
+        create.Headers.Add("X-CSRF-TOKEN", token);
+        var accountId = (await (await client.SendAsync(create)).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var setup = new NpgsqlCommand("""
+                DELETE FROM vwce_rent_pools
+                WHERE (household_id, owner_user_id) = (
+                  SELECT account.household_id, account.owner_user_id FROM vwce_accounts account WHERE account.id = @account_id
+                );
+                INSERT INTO vwce_lots (household_id, account_id, shares, unit_price_czk, acquired_at)
+                SELECT household_id, @account_id, 1.00000000, 3000.00, now() - interval '1 day'
+                FROM vwce_accounts WHERE id = @account_id;
+                """, connection);
+            setup.Parameters.AddWithValue("account_id", accountId);
+            await setup.ExecuteNonQueryAsync();
+        }
+
+        var paidAt = new DateTimeOffset(DateTime.UtcNow.Date.AddHours(23), TimeSpan.Zero).ToString("O");
+        token = await GetAntiforgeryToken(client);
+        var first = await SendPayout(client, token, Guid.NewGuid(), new
+        {
+            accountId,
+            amountCzk = "40",
+            paidAt,
+            note = (string?)null,
+        });
+        var deferred = await first.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.True(deferred.GetProperty("deferred").GetBoolean());
+        Assert.Equal(40m, deferred.GetProperty("rentPoolCzk").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, deferred.GetProperty("id").ValueKind);
+
+        var afterDeferred = await client.GetFromJsonAsync<JsonElement>("/api/vwce/overview");
+        Assert.Equal(40m, afterDeferred.GetProperty("totals").GetProperty("rentPoolCzk").GetDecimal());
+        Assert.DoesNotContain(afterDeferred.GetProperty("recentMovements").EnumerateArray(), movement =>
+            movement.GetProperty("accountId").GetGuid() == accountId && movement.GetProperty("type").GetString() == "rent_payout");
+
+        token = await GetAntiforgeryToken(client);
+        var second = await SendPayout(client, token, Guid.NewGuid(), new
+        {
+            accountId,
+            amountCzk = "60",
+            paidAt,
+            note = (string?)null,
+        });
+        var paid = await second.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.False(paid.GetProperty("deferred").GetBoolean());
+        Assert.Equal(100m, paid.GetProperty("amountCzk").GetDecimal());
+        Assert.Equal(0m, paid.GetProperty("rentPoolCzk").GetDecimal());
+
+        var afterPayout = await client.GetFromJsonAsync<JsonElement>("/api/vwce/overview");
+        Assert.Equal(0m, afterPayout.GetProperty("totals").GetProperty("rentPoolCzk").GetDecimal());
+        Assert.Contains(afterPayout.GetProperty("recentMovements").EnumerateArray(), movement =>
+            movement.GetProperty("accountId").GetGuid() == accountId
+            && movement.GetProperty("type").GetString() == "rent_payout"
+            && movement.GetProperty("proceedsCzk").GetDecimal() >= 100m);
+    }
+
+    [Fact]
     public async Task Overview_is_owner_scoped_and_uses_materialized_fifo_allocations()
     {
         var accountId = Guid.NewGuid();
