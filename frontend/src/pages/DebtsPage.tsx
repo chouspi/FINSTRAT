@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
@@ -23,9 +23,11 @@ import { formatCzechDate, parseCzechDate, todayIsoDate } from "../lib/date";
 import { notifyDataChanged } from "../lib/dataRefresh";
 import "./DebtsPage.css";
 import "./DebtPaymentFixes.css";
+import "./DebtsUx.css";
 
 const parseDebtAmount = (value: string) => Number(value.replace(/\s/g, "").replace(",", "."));
 const debtAmountForApi = (value: string) => value.replace(/\s/g, "").replace(",", ".");
+const validDebtAmount = (value: string) => /^\d+(?:\.\d{1,2})?$/.test(debtAmountForApi(value)) && parseDebtAmount(value) > 0;
 
 type DebtOverview = {
   totals: DebtTotals;
@@ -71,12 +73,19 @@ type ConfirmedScheduledPayment = {
   effectiveAt: string;
   nextEffectiveAt: string;
   note: string | null;
+  canRenew?: boolean;
 };
 
 const czk = new Intl.NumberFormat("cs-CZ", {
   style: "currency",
   currency: "CZK",
   maximumFractionDigits: 0,
+});
+const exactCzk = new Intl.NumberFormat("cs-CZ", {
+  style: "currency",
+  currency: "CZK",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 const date = new Intl.DateTimeFormat("cs-CZ", {
   day: "numeric",
@@ -133,30 +142,23 @@ export function DebtsPage() {
   );
   const scheduledPayments = data.scheduledPayments ?? [];
   const duePayments = scheduledPayments.filter((payment) => payment.isDue);
+  const scheduledTotal = scheduledPayments.reduce(
+    (sum, payment) => sum + payment.amountCzk,
+    0,
+  );
   return (
     <section className="debts-page">
-      <div className="debt-summary" aria-label="Souhrn dluhů">
-        <DebtMetric
-          label="Celkový dluh"
-          value={czk.format(data.totals.activeBalanceCzk)}
-          strong
-        />
-        <DebtMetric
-          label="Ke splacení"
-          value={czk.format(data.totals.repayableBalanceCzk)}
-          note="mimo hypotéku"
-          tone={data.totals.repayableBalanceCzk > 0 ? "danger" : undefined}
-        />
-        <DebtMetric
-          label="Hypotéky"
-          value={czk.format(data.totals.mortgageBalanceCzk)}
-          note="pravidelné splácení"
-        />
-        <DebtMetric
-          label="Smlouvy"
-          value={String(data.totals.activeCount)}
-          note={`${data.totals.closedCount} splacených`}
-        />
+      <div className="debt-hero" aria-label="Souhrn dluhů">
+        <div className="debt-total-card">
+          <span>Celkový dluh</span>
+          <strong>{czk.format(data.totals.activeBalanceCzk)}</strong>
+          <small>{data.totals.activeCount} aktivní · {data.totals.closedCount} splacené</small>
+        </div>
+        <div className="debt-summary">
+          <DebtMetric label="Ke splacení" value={czk.format(data.totals.repayableBalanceCzk)} note="mimo hypotéku" tone={data.totals.repayableBalanceCzk > 0 ? "danger" : undefined} />
+          <DebtMetric label="Hypotéky" value={czk.format(data.totals.mortgageBalanceCzk)} note="dlouhodobý závazek" />
+          <DebtMetric label="Naplánováno" value={czk.format(scheduledTotal)} note={scheduledPayments.length === 1 ? "1 budoucí splátka" : `${scheduledPayments.length} budoucí splátky`} />
+        </div>
       </div>
       {duePayments.length > 0 && (
         <DuePaymentsBar payments={duePayments} onConfirmed={setRenewalOffer} />
@@ -168,8 +170,7 @@ export function DebtsPage() {
           </div>
           <h2>Žádné evidované dluhy</h2>
           <p>
-            Portfolio je bez závazků. Nový dluh můžete přidat tlačítkem vpravo
-            nahoře.
+            Portfolio je bez závazků. Nový závazek založíte akcí Přidat dluh.
           </p>
         </div>
       ) : (
@@ -217,7 +218,7 @@ export function DebtsPage() {
           <div className="debt-section-title debt-history-title">
             POSLEDNÍ POHYBY
           </div>
-          <DebtEntries entries={data.recentEntries} />
+          <DebtEntries entries={data.recentEntries.filter((entry) => !entry.isScheduled)} />
         </>
       )}
       {dialog === "debt" && <DebtFormDialog onClose={closeRouteDialog} />}
@@ -308,7 +309,8 @@ function ScheduledPaymentRow({
     },
     onSuccess: async (result) => {
       setConfirming(false);
-      onConfirmed(result.payments);
+      const renewable = result.payments.filter((payment) => payment.canRenew !== false);
+      if (renewable.length > 0) onConfirmed(renewable);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["debts"] }),
         queryClient.invalidateQueries({ queryKey: ["income-plan"] }),
@@ -346,9 +348,9 @@ function ScheduledPaymentRow({
           {payment.note ? ` · ${payment.note}` : ""}
         </small>
       </div>
-      <strong>{czk.format(payment.amountCzk)}</strong>
+      <strong>{exactCzk.format(payment.amountCzk)}</strong>
       <div className="scheduled-payment-actions">
-        <button type="button" disabled={confirm.isPending || remove.isPending} onClick={() => setConfirming(true)}>Splatit</button>
+        <button type="button" disabled={confirm.isPending || remove.isPending} onClick={() => setConfirming(true)}>{payment.isDue ? "Potvrdit splátku" : "Splatit předčasně"}</button>
         <button className="scheduled-payment-delete" type="button" aria-label={`Smazat plánovanou splátku ${payment.debtName}`} disabled={confirm.isPending || remove.isPending} onClick={() => setDeleteConfirming(true)}><Trash2 size={14} /></button>
       </div>
       {(confirm.error || remove.error) && (
@@ -356,8 +358,8 @@ function ScheduledPaymentRow({
           {confirm.error?.message ?? remove.error?.message}
         </p>
       )}
-      {confirming && <DebtDialog title="Potvrdit plánovanou splátku?" kicker="SKUTEČNÉ SNÍŽENÍ DLUHU" onClose={() => setConfirming(false)}><p>Potvrzením se {czk.format(payment.amountCzk)} odečte ze zůstatku dluhu {payment.debtName}.</p><div className="debt-dialog-actions"><button type="button" onClick={() => setConfirming(false)}>Zrušit</button><button className="pay" type="button" disabled={confirm.isPending} onClick={() => confirm.mutate()}>{confirm.isPending ? "Potvrzuji…" : "Ano, splatit"}</button></div></DebtDialog>}
-      {deleteConfirming && <DebtDialog title="Smazat plánovanou splátku?" kicker="ZRUŠENÍ REZERVACE" onClose={() => setDeleteConfirming(false)}><p>Budoucí splátka {czk.format(payment.amountCzk)} se zruší a dluh se nezmění.</p><div className="debt-dialog-actions"><button type="button" onClick={() => setDeleteConfirming(false)}>Zpět</button><button className="account-delete-confirm" type="button" disabled={remove.isPending} onClick={() => remove.mutate()}>{remove.isPending ? "Mažu…" : "Smazat plánovanou splátku"}</button></div></DebtDialog>}
+      {confirming && <DebtDialog title="Potvrdit plánovanou splátku?" kicker="SKUTEČNÉ SNÍŽENÍ DLUHU" onClose={() => setConfirming(false)}><p>Potvrzením se {exactCzk.format(payment.amountCzk)} odečte ze zůstatku dluhu {payment.debtName}.</p><div className="debt-dialog-actions"><button type="button" onClick={() => setConfirming(false)}>Zrušit</button><button className="pay" type="button" disabled={confirm.isPending} onClick={() => confirm.mutate()}>{confirm.isPending ? "Potvrzuji…" : "Ano, splatit"}</button></div></DebtDialog>}
+      {deleteConfirming && <DebtDialog title="Smazat plánovanou splátku?" kicker="ZRUŠENÍ REZERVACE" onClose={() => setDeleteConfirming(false)}><p>Budoucí splátka {exactCzk.format(payment.amountCzk)} se zruší a dluh se nezmění.</p><div className="debt-dialog-actions"><button type="button" onClick={() => setDeleteConfirming(false)}>Zpět</button><button className="account-delete-confirm" type="button" disabled={remove.isPending} onClick={() => remove.mutate()}>{remove.isPending ? "Mažu…" : "Smazat plánovanou splátku"}</button></div></DebtDialog>}
     </div>
   );
 }
@@ -370,6 +372,7 @@ function DuePaymentsBar({
   onConfirmed: (payments: ConfirmedScheduledPayment[]) => void;
 }) {
   const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
   const amount = payments.reduce((sum, payment) => sum + payment.amountCzk, 0);
   const confirm = useMutation({
     mutationFn: async () => {
@@ -380,7 +383,9 @@ function DuePaymentsBar({
       );
     },
     onSuccess: async (result) => {
-      onConfirmed(result.payments);
+      setConfirming(false);
+      const renewable = result.payments.filter((payment) => payment.canRenew !== false);
+      if (renewable.length > 0) onConfirmed(renewable);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["debts"] }),
         queryClient.invalidateQueries({ queryKey: ["income-plan"] }),
@@ -400,24 +405,25 @@ function DuePaymentsBar({
           </strong>
           <small>
             {payments.map((payment) => payment.debtName).join(", ")} ·{" "}
-            {czk.format(amount)}
+            {exactCzk.format(amount)}
           </small>
         </span>
       </div>
       <button
         type="button"
         disabled={confirm.isPending}
-        onClick={() => confirm.mutate()}
+        onClick={() => setConfirming(true)}
       >
         {confirm.isPending
-          ? "Potvrzuji…"
-          : `Splatit plánované splátky (${czk.format(amount)})`}
+              ? "Potvrzuji…"
+              : `Splatit plánované splátky (${exactCzk.format(amount)})`}
       </button>
       {confirm.error && (
         <p className="form-error" role="alert">
           {confirm.error.message}
         </p>
       )}
+      {confirming && <DebtDialog title="Potvrdit splatné platby?" kicker="HROMADNÉ SNÍŽENÍ DLUHŮ" onClose={() => setConfirming(false)}><div className="due-confirmation"><p>Potvrzením se skutečně sníží zůstatky následujících dluhů:</p>{payments.map((payment) => <div key={payment.id}><span>{payment.debtName}</span><strong>{exactCzk.format(payment.amountCzk)}</strong></div>)}<b>Celkem {exactCzk.format(amount)}</b></div><div className="debt-dialog-actions"><button type="button" onClick={() => setConfirming(false)}>Zrušit</button><button className="pay" type="button" disabled={confirm.isPending} onClick={() => confirm.mutate()}>{confirm.isPending ? "Potvrzuji…" : "Potvrdit všechny splátky"}</button></div></DebtDialog>}
     </div>
   );
 }
@@ -430,6 +436,7 @@ function RenewScheduledPaymentsDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const keys = useRef(new Map(payments.map((payment) => [`${payment.debtId}:${payment.effectiveAt}`, createUuid()])));
   const schedule = useMutation({
     mutationFn: async () => {
       const token = await antiforgeryToken();
@@ -439,7 +446,7 @@ function RenewScheduledPaymentsDialog({
           headers: {
             "Content-Type": "application/json",
             "X-CSRF-TOKEN": token,
-            "Idempotency-Key": createUuid(),
+            "Idempotency-Key": keys.current.get(`${payment.debtId}:${payment.effectiveAt}`) ?? createUuid(),
           },
           body: JSON.stringify({
             amountCzk: payment.amountCzk.toFixed(2),
@@ -470,13 +477,13 @@ function RenewScheduledPaymentsDialog({
         {payments.map((payment) => (
           <div key={`${payment.debtId}-${payment.effectiveAt}`}>
             <span>{payment.debtName}</span>
-            <strong>{czk.format(payment.amountCzk)}</strong>
+            <strong>{exactCzk.format(payment.amountCzk)}</strong>
             <small>
               {date.format(new Date(`${payment.nextEffectiveAt}T12:00:00`))}
             </small>
           </div>
         ))}
-        {payments.length > 1 && <b>Celkem {czk.format(total)}</b>}
+        {payments.length > 1 && <b>Celkem {exactCzk.format(total)}</b>}
         {schedule.error && (
           <p className="form-error" role="alert">
             {schedule.error.message}
@@ -596,12 +603,14 @@ function DebtManagementRow({
       ) : (
         <div
           className="debt-management-priority"
+          role="group"
           aria-label={`Priorita ${debt.name}`}
         >
           {[0, 1, 2, 3, 4, 5].map((priority) => (
             <button
               className={debt.priority === priority ? "selected" : ""}
               type="button"
+              aria-pressed={debt.priority === priority}
               aria-label={`Nastavit prioritu ${priority} pro ${debt.name}`}
               disabled={closed || updatePriority.isPending}
               onClick={() => updatePriority.mutate(priority)}
@@ -675,6 +684,12 @@ function DebtRow({
 }) {
   const queryClient = useQueryClient();
   const closed = Boolean(debt.closedAt) || debt.balanceCzk === 0;
+  const [expanded, setExpanded] = useState(false);
+  const [archiveConfirming, setArchiveConfirming] = useState(false);
+  const availableBalance = Math.max(
+    0,
+    debt.balanceCzk - (debt.scheduledPaymentCzk ?? 0),
+  );
   const archive = useMutation({
     mutationFn: async () => {
       const token = await antiforgeryToken();
@@ -684,12 +699,13 @@ function DebtRow({
       });
     },
     onSuccess: async () => {
+      setArchiveConfirming(false);
       await queryClient.invalidateQueries({ queryKey: ["debts"] });
       notifyDataChanged();
     },
   });
   return (
-    <details className={`debt-row${closed ? " debt-row--closed" : ""}`}>
+    <details className={`debt-row${closed ? " debt-row--closed" : ""}`} onToggle={(event) => setExpanded(event.currentTarget.open)}>
       <summary>
         <div className="debt-name">
           <div className="debt-icon">
@@ -719,6 +735,9 @@ function DebtRow({
         <div className="debt-balance">
           <span>{closed ? "Splaceno" : "Zůstatek"}</span>
           <strong>{czk.format(debt.balanceCzk)}</strong>
+          {!closed && (debt.scheduledPaymentCzk ?? 0) > 0 && (
+            <small>Dostupné {czk.format(availableBalance)}</small>
+          )}
         </div>
         <ChevronDown className="debt-chevron" size={18} />
       </summary>
@@ -763,14 +782,15 @@ function DebtRow({
               type="button"
               aria-label={`Archivovat ${debt.name}`}
               disabled={archive.isPending}
-              onClick={() => archive.mutate()}
+              onClick={() => setArchiveConfirming(true)}
             >
               <Archive size={15} />
             </button>
           )}
         </div>
       </div>
-      <DebtHistory debtId={debt.id} />
+      {expanded && <DebtHistory debtId={debt.id} />}
+      {archiveConfirming && <DebtDialog title="Archivovat splacený dluh?" kicker="SKRYTÍ Z PŘEHLEDU" onClose={() => setArchiveConfirming(false)}><p>Dluh {debt.name} zmizí z přehledu. Jeho účetní historie zůstane zachovaná.</p><div className="debt-dialog-actions"><button type="button" onClick={() => setArchiveConfirming(false)}>Zpět</button><button className="account-delete-confirm" type="button" disabled={archive.isPending} onClick={() => archive.mutate()}>{archive.isPending ? "Archivuji…" : "Archivovat dluh"}</button></div></DebtDialog>}
     </details>
   );
 }
@@ -827,6 +847,7 @@ function DebtEntryRow({ entry }: { entry: DebtEntry }) {
       });
     },
     onSuccess: async () => {
+      setConfirming(false);
       await queryClient.invalidateQueries({ queryKey: ["debts"] });
       notifyDataChanged();
     },
@@ -851,31 +872,26 @@ function DebtEntryRow({ entry }: { entry: DebtEntry }) {
           {entry.note ? ` · ${entry.note}` : ""}
         </small>
       </div>
-      <time>{date.format(new Date(`${entry.effectiveAt}T12:00:00`))}</time>
+      <time dateTime={entry.effectiveAt}>{date.format(new Date(`${entry.effectiveAt}T12:00:00`))}</time>
       <strong
         className={outgoing ? "debt-amount--payment" : "debt-amount--increase"}
       >
         {outgoing ? "−" : "+"}
-        {czk.format(entry.amountCzk)}
+        {exactCzk.format(entry.amountCzk)}
       </strong>
       {(entry.type === "payment" || entry.type === "scheduled_payment") && (
         <button
-          className={
-            confirming ? "debt-entry-delete confirming" : "debt-entry-delete"
-          }
+          className="debt-entry-delete"
           type="button"
           disabled={remove.isPending}
-          aria-label={
-            confirming
-              ? `Potvrdit smazání splátky ${entry.debtName}`
-              : `Smazat splátku ${entry.debtName}`
-          }
-          onClick={() => (confirming ? remove.mutate() : setConfirming(true))}
-          onBlur={() => setConfirming(false)}
+          aria-label={`Smazat splátku ${entry.debtName}`}
+          onClick={() => setConfirming(true)}
         >
           <Trash2 size={14} />
         </button>
       )}
+      {remove.error && <p className="form-error debt-entry-error" role="alert">{remove.error.message}</p>}
+      {confirming && <DebtDialog title="Smazat zapsanou splátku?" kicker="ZMĚNA ÚČETNÍ HISTORIE" onClose={() => setConfirming(false)}><p>Splátka {exactCzk.format(entry.amountCzk)} bude odstraněna. Zůstatek dluhu se zvýší a již splacený dluh se může znovu otevřít.</p><div className="debt-dialog-actions"><button type="button" onClick={() => setConfirming(false)}>Zpět</button><button className="account-delete-confirm" type="button" disabled={remove.isPending} onClick={() => remove.mutate()}>{remove.isPending ? "Mažu…" : "Smazat splátku"}</button></div></DebtDialog>}
     </div>
   );
 }
@@ -915,12 +931,14 @@ function DebtFormDialog({
         });
       const dateValue = parseCzechDate(openedAt);
       if (!dateValue) throw new Error("Datum musí být ve formátu DD.MM.RRRR.");
+      if (!validDebtAmount(amount))
+        throw new Error("Počáteční zůstatek musí být kladná částka s nejvýše 2 desetinnými místy.");
       return apiRequest("/api/debts", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token },
         body: JSON.stringify({
           name,
-          openingBalanceCzk: amount,
+          openingBalanceCzk: debtAmountForApi(amount),
           priority,
           isMortgage: mortgage,
           openedAt: dateValue,
@@ -985,6 +1003,7 @@ function DebtFormDialog({
                 <button
                   className={priority === value ? "selected" : ""}
                   type="button"
+                  aria-pressed={priority === value}
                   key={value}
                   onClick={() => setPriority(value)}
                 >
@@ -1081,6 +1100,7 @@ function PaymentDialog({
     },
   });
   const payment = parseDebtAmount(amount);
+  const paymentIsValid = validDebtAmount(amount);
   const parsedEffectiveAt = parseCzechDate(effectiveAt);
   const isScheduled = Boolean(
     parsedEffectiveAt && parsedEffectiveAt > todayIsoDate(),
@@ -1133,19 +1153,19 @@ function PaymentDialog({
           <div className="payment-preview">
             <span>
               Aktuální zůstatek{" "}
-              <strong>{czk.format(selected.balanceCzk)}</strong>
+              <strong>{exactCzk.format(selected.balanceCzk)}</strong>
             </span>
             {(selected.scheduledPaymentCzk ?? 0) > 0 && (
               <span>
                 Již naplánováno{" "}
-                <strong>{czk.format(selected.scheduledPaymentCzk)}</strong>
+                <strong>{exactCzk.format(selected.scheduledPaymentCzk)}</strong>
               </span>
             )}
             <span>
               {isScheduled ? "Po plánovaných splátkách" : "Po splátce"}{" "}
               <strong>
                 {Number.isFinite(payment) && payment > 0
-                  ? czk.format(Math.max(0, availableBalance - payment))
+                  ? exactCzk.format(Math.max(0, availableBalance - payment))
                   : "—"}
               </strong>
             </span>
@@ -1199,7 +1219,7 @@ function PaymentDialog({
             disabled={
               mutation.isPending ||
               !debtId ||
-              !(payment > 0) ||
+               !paymentIsValid ||
               Boolean(selected && payment > availableBalance)
             }
           >
@@ -1226,11 +1246,13 @@ function DrawdownDialog({
     formatCzechDate(todayIsoDate()),
   );
   const [note, setNote] = useState("");
-  const increase = Number(amount);
+  const increase = parseDebtAmount(amount);
   const mutation = useMutation({
     mutationFn: async () => {
       const parsed = parseCzechDate(effectiveAt);
       if (!parsed) throw new Error("Datum musí být ve formátu DD.MM.RRRR.");
+      if (!validDebtAmount(amount))
+        throw new Error("Částka navýšení musí mít nejvýše 2 desetinná místa.");
       const token = await antiforgeryToken();
       await apiRequest(`/api/debts/${debt.id}/drawdowns`, {
         method: "POST",
@@ -1240,7 +1262,7 @@ function DrawdownDialog({
           "Idempotency-Key": key.current,
         },
         body: JSON.stringify({
-          amountCzk: amount,
+          amountCzk: debtAmountForApi(amount),
           effectiveAt: parsed,
           note: note || null,
         }),
@@ -1280,13 +1302,13 @@ function DrawdownDialog({
         </label>
         <div className="payment-preview">
           <span>
-            Aktuální zůstatek <strong>{czk.format(debt.balanceCzk)}</strong>
+            Aktuální zůstatek <strong>{exactCzk.format(debt.balanceCzk)}</strong>
           </span>
           <span>
             Po navýšení{" "}
             <strong>
               {Number.isFinite(increase) && increase > 0
-                ? czk.format(debt.balanceCzk + increase)
+                ? exactCzk.format(debt.balanceCzk + increase)
                 : "—"}
             </strong>
           </span>
@@ -1322,7 +1344,7 @@ function DrawdownDialog({
             className="primary"
             type="submit"
             disabled={
-              mutation.isPending || !Number.isFinite(increase) || increase <= 0
+              mutation.isPending || !validDebtAmount(amount)
             }
           >
             <Plus size={15} />{" "}
@@ -1345,6 +1367,42 @@ function DebtDialog({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const closeDialog = useEffectEvent(onClose);
+  useEffect(() => {
+    returnFocus.current = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    const frame = window.requestAnimationFrame(() => {
+      if (dialog && !dialog.contains(document.activeElement)) dialog.focus();
+    });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeDialog();
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKeyDown);
+      returnFocus.current?.focus();
+    };
+  }, []);
   return (
     <div
       className="dialog-backdrop"
@@ -1352,10 +1410,12 @@ function DebtDialog({
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <section
+        ref={dialogRef}
         className="debt-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="debt-dialog-title"
+        aria-labelledby={titleId}
+        tabIndex={-1}
       >
         <button
           className="dialog-close"
@@ -1366,7 +1426,7 @@ function DebtDialog({
           <X size={18} />
         </button>
         <p>{kicker}</p>
-        <h2 id="debt-dialog-title">{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         {children}
       </section>
     </div>

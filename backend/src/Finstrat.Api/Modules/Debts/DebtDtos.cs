@@ -46,7 +46,7 @@ public sealed record CreateDebtDrawdownRequest(string AmountCzk, string Effectiv
 public sealed record DebtCommandResponse(Guid Id, decimal BalanceCzk, DateOnly? ClosedAt);
 public sealed record ConfirmScheduledPaymentResponse(
     Guid DebtId, string DebtName, decimal AmountCzk, DateOnly EffectiveAt,
-    DateOnly NextEffectiveAt, string? Note);
+    DateOnly NextEffectiveAt, string? Note, bool CanRenew);
 public sealed record ConfirmScheduledPaymentsResponse(
     int ConfirmedCount,
     decimal ConfirmedAmountCzk,

@@ -34,6 +34,7 @@ describe('DebtsPage', () => {
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RouterProvider router={router} /></QueryClientProvider>)
     expect(await screen.findByRole('heading', { name: 'Dluhy' })).toBeInTheDocument()
     expect(await screen.findByText('Spotřebitelský úvěr')).toBeInTheDocument()
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/entries'))).toBe(false)
     expect(screen.getAllByText('Hypotéka').length).toBeGreaterThan(0)
     expect(screen.getByText('Stará půjčka')).toBeInTheDocument()
     const loanRow = screen.getByText('Spotřebitelský úvěr').closest('details') as HTMLElement
@@ -42,13 +43,15 @@ describe('DebtsPage', () => {
 
     await user.click(within(loanRow).getByRole('button', { name: 'Navýšit' }))
     const drawdown = screen.getByRole('dialog', { name: 'Navýšit půjčku' })
-    await user.type(within(drawdown).getByLabelText('Částka navýšení (Kč)'), '25000')
-    expect(within(drawdown).getByText(/125[  ]000[  ]Kč/)).toBeInTheDocument()
+    await user.type(within(drawdown).getByLabelText('Částka navýšení (Kč)'), '25 000,50')
+    expect(within(drawdown).getByText(/125[  ]000,50[  ]Kč/)).toBeInTheDocument()
     await user.click(within(drawdown).getByRole('button', { name: 'Navýšit půjčku' }))
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url, options]) => String(url).endsWith('/api/debts/loan/drawdowns') && options?.method === 'POST')).toBe(true))
 
     await user.click(screen.getByRole('button', { name: 'Smazat splátku Spotřebitelský úvěr' }))
-    await user.click(screen.getByRole('button', { name: 'Potvrdit smazání splátky Spotřebitelský úvěr' }))
+    const paymentDeletion = screen.getByRole('dialog', { name: 'Smazat zapsanou splátku?' })
+    expect(within(paymentDeletion).getByText(/znovu otevřít/)).toBeInTheDocument()
+    await user.click(within(paymentDeletion).getByRole('button', { name: 'Smazat splátku' }))
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url, options]) => String(url).includes('/payments/payment') && options?.method === 'DELETE')).toBe(true))
 
     await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Správa dluhů' }))
@@ -64,14 +67,16 @@ describe('DebtsPage', () => {
 
     await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Přidat dluh' }))
     await user.type(screen.getByLabelText('Název'), 'Nová půjčka')
-    await user.type(screen.getByLabelText('Počáteční zůstatek (Kč)'), '25000')
+    await user.type(screen.getByLabelText('Počáteční zůstatek (Kč)'), '25 000,50')
     await user.click(within(screen.getByRole('dialog', { name: 'Přidat dluh' })).getByRole('button', { name: 'Přidat dluh' }))
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url, options]) => String(url).endsWith('/api/debts') && options?.method === 'POST')).toBe(true))
+    const createCall = vi.mocked(fetch).mock.calls.find(([url, options]) => String(url).endsWith('/api/debts') && options?.method === 'POST')
+    expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({ openingBalanceCzk: '25000.50' })
 
     await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Zapsat splátku' }))
     await user.type(screen.getByLabelText('Částka splátky (Kč)'), '10000')
     expect(screen.getByLabelText('Částka splátky (Kč)')).toHaveValue('10000')
-    expect(screen.getByText('Po splátce').closest('span')).toHaveTextContent(/90[  ]000[  ]Kč/)
+    expect(screen.getByText('Po splátce').closest('span')).toHaveTextContent(/90[  ]000,00[  ]Kč/)
     await user.click(screen.getByRole('button', { name: 'Potvrdit splátku' }))
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url, options]) => String(url).includes('/payments') && options?.method === 'POST')).toBe(true))
 
@@ -109,12 +114,16 @@ describe('DebtsPage', () => {
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RouterProvider router={router} /></QueryClientProvider>)
 
     expect(await screen.findByText('PLÁNOVANÉ SPLÁTKY')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Splatit plánované splátky/ }))
+    const bulkConfirmation = screen.getByRole('dialog', { name: 'Potvrdit splatné platby?' })
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/scheduled-payments/due/confirm'))).toBe(false)
+    await user.click(within(bulkConfirmation).getByRole('button', { name: 'Zrušit' }))
     await user.click(screen.getByRole('button', { name: 'Smazat plánovanou splátku Půjčka' }))
     const deletion = screen.getByRole('dialog', { name: 'Smazat plánovanou splátku?' })
     await user.click(within(deletion).getByRole('button', { name: 'Smazat plánovanou splátku' }))
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url, request]) => String(url).endsWith('/debts/loan/payments/scheduled') && request?.method === 'DELETE')).toBe(true))
 
-    await user.click(screen.getByRole('button', { name: 'Splatit' }))
+    await user.click(screen.getByRole('button', { name: 'Potvrdit splátku' }))
     expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/scheduled-payments/scheduled/confirm'))).toBe(false)
     const confirmation = screen.getByRole('dialog', { name: 'Potvrdit plánovanou splátku?' })
     await user.click(within(confirmation).getByRole('button', { name: 'Ano, splatit' }))

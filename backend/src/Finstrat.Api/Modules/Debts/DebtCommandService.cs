@@ -386,10 +386,15 @@ public sealed class DebtCommandService(ApplicationDbContext dbContext)
                   FROM confirmed
                 )
                 SELECT confirmed.debt_id, debt.name, confirmed.amount_czk,
-                  confirmed.effective_at, context.today, confirmed.note
+                  confirmed.effective_at, context.today, confirmed.note,
+                  GREATEST(balance.balance_czk - SUM(confirmed.amount_czk) OVER (
+                    PARTITION BY confirmed.debt_id
+                  ), 0) AS remaining_balance_czk
                 FROM confirmed
                 JOIN debts debt
                   ON debt.household_id = @household_id AND debt.id = confirmed.debt_id
+                JOIN debt_balances balance
+                  ON balance.household_id = debt.household_id AND balance.debt_id = debt.id
                 CROSS JOIN context
                 ORDER BY confirmed.effective_at, confirmed.id
                 """, connection, transaction);
@@ -407,7 +412,8 @@ public sealed class DebtCommandService(ApplicationDbContext dbContext)
                 while (nextEffectiveAt <= today) nextEffectiveAt = nextEffectiveAt.AddMonths(1);
                 payments.Add(new ConfirmScheduledPaymentResponse(
                     reader.GetGuid(0), reader.GetString(1), reader.GetDecimal(2), effectiveAt,
-                    nextEffectiveAt, reader.IsDBNull(5) ? null : reader.GetString(5)));
+                    nextEffectiveAt, reader.IsDBNull(5) ? null : reader.GetString(5),
+                    reader.GetDecimal(6) > 0));
             }
             await reader.DisposeAsync();
             if (payments.Count == 0)

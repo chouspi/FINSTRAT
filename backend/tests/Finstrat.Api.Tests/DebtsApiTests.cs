@@ -178,7 +178,10 @@ public sealed class DebtsApiTests(IdentityApiFixture fixture)
         token = await Token(client);
         using var confirm = new HttpRequestMessage(HttpMethod.Post, "/api/debts/scheduled-payments/due/confirm");
         confirm.Headers.Add("X-CSRF-TOKEN", token);
-        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(confirm)).StatusCode);
+        var confirmed = await client.SendAsync(confirm);
+        Assert.Equal(HttpStatusCode.OK, confirmed.StatusCode);
+        var confirmedPayload = await confirmed.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(confirmedPayload.GetProperty("payments")[0].GetProperty("canRenew").GetBoolean());
 
         overview = await client.GetFromJsonAsync<JsonElement>("/api/debts/overview");
         debt = overview.GetProperty("debts").EnumerateArray().Single(item => item.GetProperty("id").GetGuid() == debtId);
@@ -236,6 +239,20 @@ public sealed class DebtsApiTests(IdentityApiFixture fixture)
         overview = await client.GetFromJsonAsync<JsonElement>("/api/debts/overview");
         debt = overview.GetProperty("debts").EnumerateArray().Single(item => item.GetProperty("id").GetGuid() == debtId);
         Assert.Equal(0m, debt.GetProperty("scheduledPaymentCzk").GetDecimal());
+
+        token = await Token(client);
+        await SendPayment(client, debtId, token, Guid.NewGuid(), new
+        {
+            amountCzk = "2418.82", effectiveAt = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(2).ToString("O"), note = "Full payoff",
+        });
+        overview = await client.GetFromJsonAsync<JsonElement>("/api/debts/overview");
+        paymentId = overview.GetProperty("scheduledPayments").EnumerateArray().Single(item => item.GetProperty("debtId").GetGuid() == debtId).GetProperty("id").GetGuid();
+        token = await Token(client);
+        using var confirm = new HttpRequestMessage(HttpMethod.Post, $"/api/debts/scheduled-payments/{paymentId}/confirm");
+        confirm.Headers.Add("X-CSRF-TOKEN", token);
+        var confirmed = await client.SendAsync(confirm);
+        var confirmedPayload = await confirmed.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.False(confirmedPayload.GetProperty("payments")[0].GetProperty("canRenew").GetBoolean());
     }
 
     [Fact]
