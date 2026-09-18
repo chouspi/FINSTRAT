@@ -16,7 +16,7 @@ describe('allocateDebtBudget', () => {
 })
 
 describe('calculateIncomeAllocation', () => {
-  it('redirects only the BTC allocation covered by the deferred VWCE pool', () => {
+  it('redirects only the BTC allocation covered by the deferred VGLA pool', () => {
     expect(redirectBtcToDeferredVwce(6000, 2000)).toEqual({ btcAmount: 4000, vwceAmount: 2000 })
     expect(redirectBtcToDeferredVwce(6000, 10000)).toEqual({ btcAmount: 0, vwceAmount: 6000 })
   })

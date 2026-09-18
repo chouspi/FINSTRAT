@@ -1067,7 +1067,7 @@ function movementLabel(type: string) {
     internal_transfer_in: 'Příchozí převod',
     internal_transfer: 'Odchozí převod',
     life_expense: 'Životní výdaj',
-    vwce_reallocation: 'Převod do VWCE',
+    vwce_reallocation: 'Převod do VGLA',
     standalone: 'Výběr',
   }
   return labels[type] ?? type

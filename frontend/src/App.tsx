@@ -57,7 +57,7 @@ type VwcePrice = { priceCzk: number }
 type NavItem = {
   label: string
   icon: LucideIcon
-  href?: '/' | '/wealth' | '/strategy' | '/taxes' | '/income-plan' | '/bitcoin' | '/vwce' | '/debts' | '/settings'
+  href?: '/' | '/wealth' | '/strategy' | '/taxes' | '/income-plan' | '/bitcoin' | '/vgla' | '/debts' | '/settings'
 }
 
 const navigation: { label: string; items: NavItem[] }[] = [
@@ -68,7 +68,7 @@ const navigation: { label: string; items: NavItem[] }[] = [
       { label: 'Jmění', icon: ChartNoAxesCombined, href: '/wealth' },
       { label: 'Strategie', icon: TrendingUp, href: '/strategy' },
       { label: 'BTC Účty', icon: Bitcoin, href: '/bitcoin' },
-      { label: 'VWCE', icon: Landmark, href: '/vwce' },
+      { label: 'VGLA', icon: Landmark, href: '/vgla' },
       { label: 'Dluhy', icon: WalletCards, href: '/debts' },
       { label: 'Daně', icon: BookOpenCheck, href: '/taxes' },
       { label: 'Nastavení', icon: Settings, href: '/settings' },
@@ -82,7 +82,7 @@ const pageHeadings: Record<string, string> = {
   '/wealth': 'Jmění',
   '/strategy': 'Strategie',
   '/bitcoin': 'BTC Účty',
-  '/vwce': 'VWCE',
+  '/vgla': 'VGLA',
   '/debts': 'Dluhy',
   '/taxes': 'Daně',
   '/settings': 'Nastavení',
@@ -128,13 +128,13 @@ function App() {
     retry: false,
   })
   const vwceOverview = useQuery({
-    queryKey: ['vwce', 'overview'],
-    queryFn: () => apiRequest<VwceSidebarOverview>('/api/vwce/overview'),
+    queryKey: ['vgla', 'overview'],
+    queryFn: () => apiRequest<VwceSidebarOverview>('/api/vgla/overview'),
     retry: false,
   })
   const vwcePrice = useQuery({
-    queryKey: ['market-data', 'vwce-price'],
-    queryFn: () => apiRequest<VwcePrice>('/api/market-data/vwce-price'),
+    queryKey: ['market-data', 'vgla-price'],
+    queryFn: () => apiRequest<VwcePrice>('/api/market-data/vgla-price'),
     retry: false,
   })
   const strategyOverview = useQuery({
@@ -154,7 +154,7 @@ function App() {
       await queryClient.invalidateQueries({ queryKey: ['identity', 'me'] })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['bitcoin'] }),
-        queryClient.invalidateQueries({ queryKey: ['vwce'] }),
+        queryClient.invalidateQueries({ queryKey: ['vgla'] }),
         queryClient.invalidateQueries({ queryKey: ['debts'] }),
         queryClient.invalidateQueries({ queryKey: ['income-plan'] }),
         queryClient.invalidateQueries({ queryKey: ['wealth'] }),
@@ -323,7 +323,7 @@ function App() {
           </div>
           {vwceMonthlyRent !== null && (
             <div className="rent-indicator">
-              <span>VWCE renta / měs.</span>
+              <span>VGLA renta / měs.</span>
               <strong>{czkFormatter.format(vwceMonthlyRent)}</strong>
             </div>
           )}
@@ -406,12 +406,12 @@ function App() {
                 <span>Přidat účet</span>
               </button>
             </div>
-          ) : pathname === '/vwce' ? (
+          ) : pathname === '/vgla' ? (
             <div className="header-actions">
               <button
                 className="header-action header-action--secondary header-action--payout"
                 type="button"
-                onClick={() => void navigate({ to: '/vwce', search: { dialog: 'payout' } })}
+                onClick={() => void navigate({ to: '/vgla', search: { dialog: 'payout' } })}
               >
                 <Banknote size={15} />
                 <span>Vyplatit</span>
@@ -419,7 +419,7 @@ function App() {
               <button
                 className="header-action header-action--primary"
                 type="button"
-                onClick={() => void navigate({ to: '/vwce', search: { dialog: 'account' } })}
+                onClick={() => void navigate({ to: '/vgla', search: { dialog: 'account' } })}
               >
                 <Plus size={15} />
                 <span>Nový účet</span>
@@ -442,7 +442,7 @@ function App() {
 
       {moreOpen && <div className="more-sheet-backdrop" role="presentation" onClick={() => setMoreOpen(false)}><section className="more-sheet" aria-label="Další navigace" onClick={(event) => event.stopPropagation()}><div className="sheet-handle" /><div className="sheet-title"><button className="sheet-brand" type="button" onClick={handleLogoClick}><Bitcoin size={15} /> Portfolio</button><button type="button" aria-label="Zavřít další navigaci" onClick={() => setMoreOpen(false)}><X size={18} /></button></div><Link to={pathname === '/wealth' ? '/' : '/wealth'} search={{ tab: undefined }} className={pathname === '/wealth' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><ChartNoAxesCombined size={18} />Jmění{pathname === '/wealth' && <ChevronLeft className="sheet-back" size={14} />}</Link><Link to={pathname === '/strategy' ? '/' : '/strategy'} className={pathname === '/strategy' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><TrendingUp size={18} />Strategie{pathname === '/strategy' && <ChevronLeft className="sheet-back" size={14} />}</Link><Link to={pathname === '/debts' ? '/' : '/debts'} search={{ dialog: undefined }} className={pathname === '/debts' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><WalletCards size={18} />Dluhy{pathname === '/debts' && <ChevronLeft className="sheet-back" size={14} />}</Link><Link to={pathname === '/taxes' ? '/' : '/taxes'} className={pathname === '/taxes' ? 'sheet-link active' : 'sheet-link'} onClick={() => setMoreOpen(false)}><BookOpenCheck size={18} />Daně{pathname === '/taxes' && <ChevronLeft className="sheet-back" size={14} />}</Link><Link className={pathname === '/settings' ? 'sheet-link active' : 'sheet-link'} to={pathname === '/settings' ? '/' : '/settings'} search={{ tab: undefined }} onClick={() => setMoreOpen(false)}><Settings size={18} />Nastavení{pathname === '/settings' && <ChevronLeft className="sheet-back" size={14} />}</Link><div className="sheet-price"><span>BTC / USD</span><strong>{displayedBtcPrice}</strong>{displayedChange24h && <small className={change24hClass}>{displayedChange24h}</small>}</div></section></div>}
 
-      <nav className="bottom-nav" aria-label="Mobilní navigace"><Link to={pathname === '/income-plan' ? '/' : '/income-plan'} search={{ dialog: undefined }} className={pathname === '/income-plan' ? 'active' : undefined}><Banknote size={20} /><span>Income</span></Link><Link to={pathname === '/bitcoin' ? '/' : '/bitcoin'} search={{ dialog: undefined }} className={pathname === '/bitcoin' ? 'active' : undefined}><Bitcoin size={20} /><span>BTC Účty</span></Link><Link to={pathname === '/vwce' ? '/' : '/vwce'} search={{ dialog: undefined }} className={pathname === '/vwce' ? 'active' : undefined}><Landmark size={20} /><span>VWCE</span></Link><button type="button" className={pathname === '/wealth' || pathname === '/strategy' || pathname === '/taxes' || pathname === '/debts' || pathname === '/settings' || moreOpen ? 'active' : undefined} aria-label={!moreOpen && ['/wealth', '/strategy', '/taxes', '/debts', '/settings'].includes(pathname) ? 'Více, zpět na Dashboard' : 'Více'} aria-expanded={!moreOpen && ['/wealth', '/strategy', '/taxes', '/debts', '/settings'].includes(pathname) ? undefined : moreOpen} onClick={() => { if (!moreOpen && ['/wealth', '/strategy', '/taxes', '/debts', '/settings'].includes(pathname)) void navigate({ to: '/' }); else setMoreOpen((open) => !open) }}><MoreHorizontal size={20} /><span>Více</span></button></nav>
+      <nav className="bottom-nav" aria-label="Mobilní navigace"><Link to={pathname === '/income-plan' ? '/' : '/income-plan'} search={{ dialog: undefined }} className={pathname === '/income-plan' ? 'active' : undefined}><Banknote size={20} /><span>Income</span></Link><Link to={pathname === '/bitcoin' ? '/' : '/bitcoin'} search={{ dialog: undefined }} className={pathname === '/bitcoin' ? 'active' : undefined}><Bitcoin size={20} /><span>BTC Účty</span></Link><Link to={pathname === '/vgla' ? '/' : '/vgla'} search={{ dialog: undefined }} className={pathname === '/vgla' ? 'active' : undefined}><Landmark size={20} /><span>VGLA</span></Link><button type="button" className={pathname === '/wealth' || pathname === '/strategy' || pathname === '/taxes' || pathname === '/debts' || pathname === '/settings' || moreOpen ? 'active' : undefined} aria-label={!moreOpen && ['/wealth', '/strategy', '/taxes', '/debts', '/settings'].includes(pathname) ? 'Více, zpět na Dashboard' : 'Více'} aria-expanded={!moreOpen && ['/wealth', '/strategy', '/taxes', '/debts', '/settings'].includes(pathname) ? undefined : moreOpen} onClick={() => { if (!moreOpen && ['/wealth', '/strategy', '/taxes', '/debts', '/settings'].includes(pathname)) void navigate({ to: '/' }); else setMoreOpen((open) => !open) }}><MoreHorizontal size={20} /><span>Více</span></button></nav>
 
       {loginOpen && (
         <LoginDialog
@@ -451,7 +451,7 @@ function App() {
             await queryClient.invalidateQueries({ queryKey: ['identity', 'me'] })
             await Promise.all([
               queryClient.invalidateQueries({ queryKey: ['bitcoin'] }),
-              queryClient.invalidateQueries({ queryKey: ['vwce'] }),
+              queryClient.invalidateQueries({ queryKey: ['vgla'] }),
               queryClient.invalidateQueries({ queryKey: ['debts'] }),
               queryClient.invalidateQueries({ queryKey: ['income-plan'] }),
               queryClient.invalidateQueries({ queryKey: ['wealth'] }),

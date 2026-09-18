@@ -38,7 +38,7 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
                   household_id, actor_user_id, event_type, entity_type, entity_id, description
                 ) VALUES (
                   @household_id, @user_id, 'vwce_account_created', 'vwce_account', @id,
-                  'VWCE account created'
+                  'VGLA account created'
                 );
                 """, connection);
             command.Parameters.AddWithValue("id", id);
@@ -111,10 +111,12 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
             }
 
             var marketPrice = await priceService.GetAsync(cancellationToken);
-            var unitPriceCzk = decimal.Round(marketPrice.PriceCzk, 2, MidpointRounding.ToEven);
-            var shares = decimal.Ceiling(payoutAmount / unitPriceCzk * 100_000_000m) / 100_000_000m;
+            var unitPriceEur = decimal.Round(marketPrice.PriceEur, 4, MidpointRounding.ToEven);
+            var targetAmountEur = payoutAmount / marketPrice.EurCzk;
+            var shares = decimal.Ceiling(targetAmountEur / unitPriceEur * 100_000_000m) / 100_000_000m;
             if (shares <= 0) throw new VwceValidationException("Částka je příliš nízká pro výpočet prodávaných podílů.");
-            var proceedsCzk = decimal.Round(shares * unitPriceCzk, 2, MidpointRounding.ToEven);
+            var proceedsEur = decimal.Round(shares * unitPriceEur, 4, MidpointRounding.ToEven);
+            var proceedsCzk = decimal.Round(proceedsEur * marketPrice.EurCzk, 2, MidpointRounding.ToEven);
             if (proceedsCzk < MinimumPayoutCzk)
                 throw new VwceValidationException("Výplata renty musí být alespoň 100 Kč.");
             var note = requestedNote ?? $"Výplata renty – prodej {shares:0.########} ks";
@@ -124,18 +126,18 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
             var id = Guid.NewGuid();
             await using (var command = new NpgsqlCommand("""
                 INSERT INTO vwce_disposals (
-                  id, household_id, account_id, kind, shares, unit_price_czk,
-                  proceeds_czk, disposed_at, note, created_by
+                  id, household_id, account_id, kind, shares, unit_price_eur,
+                  proceeds_eur, disposed_at, note, created_by
                 ) VALUES (
-                  @id, @household_id, @account_id, 'rent_payout', @shares, @unit_price_czk,
-                  @proceeds_czk, @paid_at, @note, @user_id
+                  @id, @household_id, @account_id, 'rent_payout', @shares, @unit_price_eur,
+                  @proceeds_eur, @paid_at, @note, @user_id
                 );
                 INSERT INTO audit_events (
                   household_id, actor_user_id, event_type, entity_type, entity_id,
                   description, metadata
                 ) VALUES (
                   @household_id, @user_id, 'vwce_rent_payout_created', 'vwce_disposal', @id,
-                  'VWCE rent payout created', jsonb_build_object('amount_czk', @proceeds_czk, 'shares', @shares)
+                  'VGLA rent payout created', jsonb_build_object('amount_czk', @proceeds_czk, 'shares', @shares)
                 );
                 """, connection, transaction))
             {
@@ -143,7 +145,8 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
                 command.Parameters.AddWithValue("household_id", householdId);
                 command.Parameters.AddWithValue("account_id", request.AccountId);
                 command.Parameters.AddWithValue("shares", shares);
-                command.Parameters.AddWithValue("unit_price_czk", unitPriceCzk);
+                command.Parameters.AddWithValue("unit_price_eur", unitPriceEur);
+                command.Parameters.AddWithValue("proceeds_eur", proceedsEur);
                 command.Parameters.AddWithValue("proceeds_czk", proceedsCzk);
                 command.Parameters.AddWithValue("paid_at", paidAt);
                 command.Parameters.AddWithValue("note", note);
@@ -155,17 +158,17 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
             {
                 await using var allocation = new NpgsqlCommand("""
                     INSERT INTO vwce_lot_allocations (
-                      household_id, disposal_id, lot_id, shares, cost_basis_czk
+                      household_id, disposal_id, lot_id, shares, cost_basis_eur
                     ) VALUES (
                       @household_id, @disposal_id, @lot_id, @shares,
-                      CASE WHEN @lot_price IS NULL THEN NULL ELSE round(@shares * @lot_price, 2) END
+                       CASE WHEN @lot_price IS NULL THEN NULL ELSE round(@shares * @lot_price, 4) END
                     )
                     """, connection, transaction);
                 allocation.Parameters.AddWithValue("household_id", householdId);
                 allocation.Parameters.AddWithValue("disposal_id", id);
                 allocation.Parameters.AddWithValue("lot_id", chunk.LotId);
                 allocation.Parameters.AddWithValue("shares", chunk.Shares);
-                allocation.Parameters.AddWithValue("lot_price", NpgsqlDbType.Numeric, (object?)chunk.UnitPriceCzk ?? DBNull.Value);
+                allocation.Parameters.AddWithValue("lot_price", NpgsqlDbType.Numeric, (object?)chunk.UnitPriceEur ?? DBNull.Value);
                 await allocation.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -173,7 +176,7 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
                 connection, transaction, householdId, userId, 0m, cancellationToken);
 
             var response = new CreateVwcePayoutResponse(
-                id, request.AccountId, requestedAmount, proceedsCzk, shares, unitPriceCzk,
+                id, request.AccountId, requestedAmount, proceedsCzk, shares, unitPriceEur,
                 paidAt, note, false, 0m);
             await CompleteIdempotencyAsync(
                 connection, transaction, householdId, idempotencyKey, response, cancellationToken);
@@ -250,7 +253,7 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
                     household_id, actor_user_id, event_type, entity_type, entity_id, description
                   )
                   SELECT @household_id, @user_id, 'vwce_account_updated', 'vwce_account', id,
-                    'VWCE account updated' FROM updated
+                    'VGLA account updated' FROM updated
                 )
                 SELECT id FROM updated
                 """, connection);
@@ -285,7 +288,7 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
               household_id, actor_user_id, event_type, entity_type, entity_id, description
             )
             SELECT @household_id, @user_id, 'vwce_account_archived', 'vwce_account', id,
-              'VWCE account archived' FROM archived
+              'VGLA account archived' FROM archived
             RETURNING entity_id
             """, connection);
         command.Parameters.AddWithValue("household_id", householdId);
@@ -302,8 +305,8 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
         if (!decimal.TryParse(request.Shares, NumberStyles.Number, CultureInfo.InvariantCulture, out var shares)
             || shares <= 0 || ((decimal.GetBits(shares)[3] >> 16) & 0x7F) > 8)
             throw new VwceValidationException("Počet podílů musí být kladné číslo s nejvýše 8 desetinnými místy.");
-        if (!decimal.TryParse(request.UnitPriceCzk, NumberStyles.Number, CultureInfo.InvariantCulture, out var unitPriceCzk)
-            || unitPriceCzk <= 0) throw new VwceValidationException("Cena za podíl musí být kladné číslo.");
+        if (!decimal.TryParse(request.UnitPriceEur, NumberStyles.Number, CultureInfo.InvariantCulture, out var unitPriceEur)
+            || unitPriceEur <= 0) throw new VwceValidationException("Cena za podíl musí být kladné číslo.");
         if (!DateTimeOffset.TryParse(request.AcquiredAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedAt))
             throw new VwceValidationException("Datum nákupu není platné.");
         var acquiredAt = parsedAt.UtcDateTime;
@@ -318,21 +321,21 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
         {
             await EnsureEditablePurchaseAsync(connection, transaction, householdId, userId, movementId, cancellationToken);
             await using var command = new NpgsqlCommand("""
-                UPDATE vwce_lots SET shares = @shares, unit_price_czk = @unit_price_czk,
+                UPDATE vwce_lots SET shares = @shares, unit_price_eur = @unit_price_eur,
                   acquired_at = @acquired_at, note = @note
                 WHERE household_id = @household_id AND id = @movement_id;
                 INSERT INTO audit_events (
                   household_id, actor_user_id, event_type, entity_type, entity_id, description
                 ) VALUES (
                   @household_id, @user_id, 'vwce_purchase_updated', 'vwce_lot', @movement_id,
-                  'VWCE purchase updated'
+                  'VGLA purchase updated'
                 );
                 """, connection, transaction);
             command.Parameters.AddWithValue("household_id", householdId);
             command.Parameters.AddWithValue("user_id", userId);
             command.Parameters.AddWithValue("movement_id", movementId);
             command.Parameters.AddWithValue("shares", shares);
-            command.Parameters.AddWithValue("unit_price_czk", unitPriceCzk);
+            command.Parameters.AddWithValue("unit_price_eur", unitPriceEur);
             command.Parameters.AddWithValue("acquired_at", acquiredAt);
             command.Parameters.AddWithValue("note", (object?)note ?? DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -352,9 +355,9 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
         if (!decimal.TryParse(request.Shares, NumberStyles.Number, CultureInfo.InvariantCulture, out var shares)
             || shares <= 0 || ((decimal.GetBits(shares)[3] >> 16) & 0x7F) > 8)
             throw new VwceValidationException("Počet podílů musí být kladné číslo s nejvýše 8 desetinnými místy.");
-        if (!decimal.TryParse(request.UnitPriceCzk, NumberStyles.Number, CultureInfo.InvariantCulture, out var unitPriceCzk)
-            || unitPriceCzk <= 0 || decimal.Round(unitPriceCzk, 2) != unitPriceCzk)
-            throw new VwceValidationException("Cena za podíl musí být kladné číslo s nejvýše 2 desetinnými místy.");
+        if (!decimal.TryParse(request.UnitPriceEur, NumberStyles.Number, CultureInfo.InvariantCulture, out var unitPriceEur)
+            || unitPriceEur <= 0 || decimal.Round(unitPriceEur, 4) != unitPriceEur)
+            throw new VwceValidationException("Cena za podíl musí být kladné číslo s nejvýše 4 desetinnými místy.");
         if (!DateTimeOffset.TryParse(request.AcquiredAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedAt))
             throw new VwceValidationException("Datum nákupu není platné.");
         var acquiredAt = parsedAt.UtcDateTime;
@@ -377,29 +380,29 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
             if (replay is not null) { await transaction.CommitAsync(cancellationToken); return replay; }
             var accountOwnerId = await EnsureOwnedAccountAsync(connection, transaction, householdId, userId, accountId, cancellationToken);
             if (request.ConsumeDeferredVwce && accountOwnerId != userId)
-                throw new VwceValidationException("Income pool lze použít pouze na vlastním VWCE účtu.");
+                throw new VwceValidationException("Income pool lze použít pouze na vlastním VGLA účtu.");
             var latestActivity = await LatestActivityAsync(connection, transaction, householdId, accountId, cancellationToken);
             if (latestActivity is not null && acquiredAt < latestActivity)
                 throw new VwceValidationException("Nákup nelze vložit před novější pohyb na účtu.");
             var id = Guid.NewGuid();
             await using var command = new NpgsqlCommand("""
                 INSERT INTO vwce_lots (
-                  id, household_id, account_id, shares, unit_price_czk, acquired_at, note, created_by
+                  id, household_id, account_id, shares, unit_price_eur, acquired_at, note, created_by
                 ) VALUES (
-                  @id, @household_id, @account_id, @shares, @unit_price_czk, @acquired_at, @note, @user_id
+                  @id, @household_id, @account_id, @shares, @unit_price_eur, @acquired_at, @note, @user_id
                 );
                 INSERT INTO audit_events (
                   household_id, actor_user_id, event_type, entity_type, entity_id, description, metadata
                 ) VALUES (
                   @household_id, @user_id, 'vwce_purchase_created', 'vwce_lot', @id,
-                  'VWCE purchase created', jsonb_build_object('shares', @shares, 'unit_price_czk', @unit_price_czk)
+                  'VGLA purchase created', jsonb_build_object('shares', @shares, 'unit_price_eur', @unit_price_eur)
                 );
                 """, connection, transaction);
             command.Parameters.AddWithValue("id", id);
             command.Parameters.AddWithValue("household_id", householdId);
             command.Parameters.AddWithValue("account_id", accountId);
             command.Parameters.AddWithValue("shares", shares);
-            command.Parameters.AddWithValue("unit_price_czk", unitPriceCzk);
+            command.Parameters.AddWithValue("unit_price_eur", unitPriceEur);
             command.Parameters.AddWithValue("acquired_at", acquiredAt);
             command.Parameters.AddWithValue("note", (object?)note ?? DBNull.Value);
             command.Parameters.AddWithValue("user_id", userId);
@@ -408,7 +411,7 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
                 ? await AllocateDeferredVwceAsync(connection, transaction, householdId, accountOwnerId, id,
                     deferredVwceAmountCzk, DateOnly.FromDateTime(acquiredAt), cancellationToken)
                 : (0m, await ReadDeferredVwceRemainingAsync(connection, transaction, householdId, accountOwnerId, cancellationToken));
-            var response = new CreateVwcePurchaseResponse(id, accountId, shares, unitPriceCzk, acquiredAt, note, deferred.Item1, deferred.Item2);
+            var response = new CreateVwcePurchaseResponse(id, accountId, shares, unitPriceEur, acquiredAt, note, deferred.Item1, deferred.Item2);
             await CompleteIdempotencyAsync(connection, transaction, householdId, idempotencyKey, response, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return response;
@@ -435,7 +438,7 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
                   household_id, actor_user_id, event_type, entity_type, entity_id, description
                 ) VALUES (
                   @household_id, @user_id, 'vwce_purchase_deleted', 'vwce_lot', @movement_id,
-                  'VWCE purchase deleted'
+                  'VGLA purchase deleted'
                 );
                 """, connection, transaction);
             command.Parameters.AddWithValue("household_id", householdId);
@@ -460,7 +463,7 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
             JOIN vwce_accounts account ON account.household_id = lot.household_id AND account.id = lot.account_id
             WHERE lot.household_id = @household_id AND lot.id = @movement_id
               AND account.archived_at IS NULL AND NOT lot.provisional
-              AND lot.unit_price_czk IS NOT NULL AND lot.source_reallocation_id IS NULL
+              AND lot.unit_price_eur IS NOT NULL AND lot.source_reallocation_id IS NULL
               AND lot.replaces_lot_id IS NULL
               AND (
                 account.owner_user_id = @user_id
@@ -531,7 +534,7 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
                   description, metadata
                 ) VALUES (
                   @household_id, @user_id, 'vwce_account_default_sharing_changed',
-                  'vwce_account', @account_id, 'VWCE account default sharing changed',
+                  'vwce_account', @account_id, 'VGLA account default sharing changed',
                   jsonb_build_object('shared', @shared)
                 );
                 """, connection, transaction);
@@ -655,7 +658,7 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
         Guid accountId, decimal shares, DateTime paidAt, CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("""
-            SELECT lot.id, lot.unit_price_czk,
+            SELECT lot.id, lot.unit_price_eur,
               lot.shares - COALESCE(allocated.shares, 0) AS remaining_shares
             FROM vwce_lots lot
             LEFT JOIN LATERAL (
@@ -685,7 +688,7 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
             chunks.Add(new PayoutChunk(reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetDecimal(1), allocated));
             remaining -= allocated;
         }
-        if (remaining > 0) throw new VwceValidationException($"Na broker účtu chybí {remaining:0.########} ks VWCE.");
+        if (remaining > 0) throw new VwceValidationException($"Na broker účtu chybí {remaining:0.########} ks VGLA.");
         return chunks;
     }
 
@@ -731,7 +734,7 @@ public sealed class VwceCommandService(ApplicationDbContext dbContext, VwcePrice
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private sealed record PayoutChunk(Guid LotId, decimal? UnitPriceCzk, decimal Shares);
+    private sealed record PayoutChunk(Guid LotId, decimal? UnitPriceEur, decimal Shares);
 }
 
 public sealed class VwceValidationException(string message) : Exception(message);

@@ -16,7 +16,7 @@ public static class TaxesEndpoints
             var (household, user) = Context(principal, users);
             return Results.Ok(await service.GetOverviewAsync(household, user, ct));
         });
-        group.MapPost("/deferred-vwce", async (DeferRecommendedTransferRequest request, HttpContext http,
+        group.MapPost("/deferred-vgla", async (DeferRecommendedTransferRequest request, HttpContext http,
             ClaimsPrincipal principal, UserManager<ApplicationUser> users, TaxesService service, CancellationToken ct) =>
         {
             if (!Guid.TryParse(http.Request.Headers["Idempotency-Key"], out var key))
@@ -24,7 +24,7 @@ public static class TaxesEndpoints
             try
             {
                 var (household, user) = Context(principal, users);
-                return Results.Created("/api/taxes/deferred-vwce", await service.DeferRecommendedAsync(household, user, key, request, ct));
+                return Results.Created("/api/taxes/deferred-vgla", await service.DeferRecommendedAsync(household, user, key, request, ct));
             }
             catch (TaxesValidationException exception)
             {

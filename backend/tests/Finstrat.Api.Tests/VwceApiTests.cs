@@ -13,7 +13,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
     {
         using var client = fixture.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { HandleCookies = true });
         var token = await GetAntiforgeryToken(client);
-        using var createAccount = new HttpRequestMessage(HttpMethod.Post, "/api/vwce/accounts")
+        using var createAccount = new HttpRequestMessage(HttpMethod.Post, "/api/vgla/accounts")
         {
             Content = JsonContent.Create(new { name = $"Purchase broker {Guid.NewGuid():N}", description = (string?)null }),
         };
@@ -23,7 +23,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
 
         token = await GetAntiforgeryToken(client);
         var key = Guid.NewGuid();
-        var body = new { shares = "1.25000000", unitPriceCzk = "4000.00", acquiredAt = DateTimeOffset.UtcNow.ToString("O"), note = "DCA" };
+        var body = new { shares = "1.25000000", unitPriceEur = "160.0000", acquiredAt = DateTimeOffset.UtcNow.ToString("O"), note = "DCA" };
         var first = await SendPurchase(client, accountId, token, key, body);
         var replay = await SendPurchase(client, accountId, token, key, body);
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
@@ -32,10 +32,10 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         var replayPayload = await replay.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(firstPayload.GetProperty("id").GetGuid(), replayPayload.GetProperty("id").GetGuid());
 
-        var overview = await client.GetFromJsonAsync<JsonElement>("/api/vwce/overview");
+        var overview = await client.GetFromJsonAsync<JsonElement>("/api/vgla/overview");
         var account = overview.GetProperty("accounts").EnumerateArray().Single(item => item.GetProperty("id").GetGuid() == accountId);
         Assert.Equal(1.25m, account.GetProperty("shares").GetDecimal());
-        Assert.Equal(5000m, account.GetProperty("costBasisCzk").GetDecimal());
+        Assert.Equal(200m, account.GetProperty("costBasisEur").GetDecimal());
     }
 
     [Fact]
@@ -55,29 +55,29 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
                   INSERT INTO vwce_accounts (id, household_id, owner_user_id, name)
                   SELECT @account_id, household_id, user_id, @name FROM context
                 )
-                INSERT INTO vwce_lots (id, household_id, account_id, shares, unit_price_czk, acquired_at)
+                INSERT INTO vwce_lots (id, household_id, account_id, shares, unit_price_eur, acquired_at)
                 SELECT @movement_id, household_id, @account_id, 1.00000000, 3000.00, now() FROM context
                 """, connection);
             command.Parameters.AddWithValue("account_id", accountId);
             command.Parameters.AddWithValue("movement_id", movementId);
-            command.Parameters.AddWithValue("name", $"Editable VWCE {Guid.NewGuid():N}");
+            command.Parameters.AddWithValue("name", $"Editable VGLA {Guid.NewGuid():N}");
             await command.ExecuteNonQueryAsync();
         }
         using var client = fixture.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { HandleCookies = true });
-        var movements = await client.GetFromJsonAsync<JsonElement>($"/api/vwce/accounts/{accountId}/movements");
+        var movements = await client.GetFromJsonAsync<JsonElement>($"/api/vgla/accounts/{accountId}/movements");
         Assert.True(movements[0].GetProperty("canEdit").GetBoolean());
         var token = await GetAntiforgeryToken(client);
-        using var update = new HttpRequestMessage(HttpMethod.Put, $"/api/vwce/movements/{movementId}/purchase")
+        using var update = new HttpRequestMessage(HttpMethod.Put, $"/api/vgla/movements/{movementId}/purchase")
         {
-            Content = JsonContent.Create(new { shares = "2.00000000", unitPriceCzk = "3100", acquiredAt = DateTimeOffset.UtcNow.ToString("O"), note = "Updated" }),
+            Content = JsonContent.Create(new { shares = "2.00000000", unitPriceEur = "124.0000", acquiredAt = DateTimeOffset.UtcNow.ToString("O"), note = "Updated" }),
         };
         update.Headers.Add("X-CSRF-TOKEN", token);
         Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(update)).StatusCode);
         token = await GetAntiforgeryToken(client);
-        using var delete = new HttpRequestMessage(HttpMethod.Delete, $"/api/vwce/movements/{movementId}/purchase");
+        using var delete = new HttpRequestMessage(HttpMethod.Delete, $"/api/vgla/movements/{movementId}/purchase");
         delete.Headers.Add("X-CSRF-TOKEN", token);
         Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(delete)).StatusCode);
-        Assert.Empty((await client.GetFromJsonAsync<JsonElement>($"/api/vwce/accounts/{accountId}/movements")).EnumerateArray());
+        Assert.Empty((await client.GetFromJsonAsync<JsonElement>($"/api/vgla/accounts/{accountId}/movements")).EnumerateArray());
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
             Content = JsonContent.Create(new
             {
                 userName,
-                displayName = "VWCE Sharing Owner",
+                displayName = "VGLA Sharing Owner",
                 email = (string?)null,
                 password = "Sample324",
                 role = "owner",
@@ -112,7 +112,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(login)).StatusCode);
 
         token = await GetAntiforgeryToken(client);
-        using var createAccount = new HttpRequestMessage(HttpMethod.Post, "/api/vwce/accounts")
+        using var createAccount = new HttpRequestMessage(HttpMethod.Post, "/api/vgla/accounts")
         {
             Content = JsonContent.Create(new { name = $"Shared broker {Guid.NewGuid():N}", description = (string?)null }),
         };
@@ -121,7 +121,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         var accountId = (await accountResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
 
         token = await GetAntiforgeryToken(client);
-        using var share = new HttpRequestMessage(HttpMethod.Put, $"/api/vwce/accounts/{accountId}/default-share")
+        using var share = new HttpRequestMessage(HttpMethod.Put, $"/api/vgla/accounts/{accountId}/default-share")
         {
             Content = JsonContent.Create(new { shared = true }),
         };
@@ -133,10 +133,10 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         logout.Headers.Add("X-CSRF-TOKEN", token);
         Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(logout)).StatusCode);
 
-        var overview = await client.GetFromJsonAsync<JsonElement>("/api/vwce/overview");
+        var overview = await client.GetFromJsonAsync<JsonElement>("/api/vgla/overview");
         var account = overview.GetProperty("accounts").EnumerateArray()
             .Single(item => item.GetProperty("id").GetGuid() == accountId);
-        Assert.Equal("VWCE Sharing Owner", account.GetProperty("ownerDisplayName").GetString());
+        Assert.Equal("VGLA Sharing Owner", account.GetProperty("ownerDisplayName").GetString());
         Assert.False(account.GetProperty("isOwnedByCurrentUser").GetBoolean());
         Assert.True(account.GetProperty("canManage").GetBoolean());
         Assert.True(account.GetProperty("isSharedWithDefault").GetBoolean());
@@ -150,7 +150,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
             HandleCookies = true,
         });
         var token = await GetAntiforgeryToken(client);
-        using var create = new HttpRequestMessage(HttpMethod.Post, "/api/vwce/accounts")
+        using var create = new HttpRequestMessage(HttpMethod.Post, "/api/vgla/accounts")
         {
             Content = JsonContent.Create(new { name = $"Payout broker {Guid.NewGuid():N}", description = "Integration" }),
         };
@@ -164,7 +164,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
             await connection.OpenAsync();
             await using var lot = new NpgsqlCommand("""
                 INSERT INTO vwce_lots (
-                  household_id, account_id, shares, unit_price_czk, acquired_at
+                  household_id, account_id, shares, unit_price_eur, acquired_at
                 )
                 SELECT household_id, @account_id, 1.00000000, 3000.00, now() - interval '1 day'
                 FROM vwce_accounts WHERE id = @account_id
@@ -190,14 +190,14 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
         Assert.Equal(firstPayload.GetProperty("id").GetGuid(), secondPayload.GetProperty("id").GetGuid());
         Assert.Equal(0.25m, firstPayload.GetProperty("shares").GetDecimal());
-        Assert.Equal(4000m, firstPayload.GetProperty("unitPriceCzk").GetDecimal());
+        Assert.Equal(160m, firstPayload.GetProperty("unitPriceEur").GetDecimal());
 
-        var overview = await client.GetFromJsonAsync<JsonElement>("/api/vwce/overview");
+        var overview = await client.GetFromJsonAsync<JsonElement>("/api/vgla/overview");
         var account = overview.GetProperty("accounts").EnumerateArray()
             .Single(item => item.GetProperty("id").GetGuid() == accountId);
         Assert.Equal(0.75m, account.GetProperty("shares").GetDecimal());
-        Assert.Equal(2250m, account.GetProperty("costBasisCzk").GetDecimal());
-        var movements = await client.GetFromJsonAsync<JsonElement>($"/api/vwce/accounts/{accountId}/movements");
+        Assert.Equal(2250m, account.GetProperty("costBasisEur").GetDecimal());
+        var movements = await client.GetFromJsonAsync<JsonElement>($"/api/vgla/accounts/{accountId}/movements");
         Assert.Equal(2, movements.GetArrayLength());
         Assert.Contains(movements.EnumerateArray(), movement =>
             movement.GetProperty("type").GetString() == "rent_payout"
@@ -205,7 +205,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         var linkedPurchase = movements.EnumerateArray().Single(movement => movement.GetProperty("type").GetString() == "purchase");
         Assert.False(linkedPurchase.GetProperty("canDelete").GetBoolean());
         token = await GetAntiforgeryToken(client);
-        using var forbiddenDelete = new HttpRequestMessage(HttpMethod.Delete, $"/api/vwce/movements/{linkedPurchase.GetProperty("id").GetGuid()}/purchase");
+        using var forbiddenDelete = new HttpRequestMessage(HttpMethod.Delete, $"/api/vgla/movements/{linkedPurchase.GetProperty("id").GetGuid()}/purchase");
         forbiddenDelete.Headers.Add("X-CSRF-TOKEN", token);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.SendAsync(forbiddenDelete)).StatusCode);
 
@@ -226,7 +226,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         await reader.DisposeAsync();
 
         token = await GetAntiforgeryToken(client);
-        using var update = new HttpRequestMessage(HttpMethod.Put, $"/api/vwce/accounts/{accountId}")
+        using var update = new HttpRequestMessage(HttpMethod.Put, $"/api/vgla/accounts/{accountId}")
         {
             Content = JsonContent.Create(new { name = $"Updated broker {Guid.NewGuid():N}", description = "Updated" }),
         };
@@ -234,10 +234,10 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(update)).StatusCode);
 
         token = await GetAntiforgeryToken(client);
-        using var archive = new HttpRequestMessage(HttpMethod.Delete, $"/api/vwce/accounts/{accountId}");
+        using var archive = new HttpRequestMessage(HttpMethod.Delete, $"/api/vgla/accounts/{accountId}");
         archive.Headers.Add("X-CSRF-TOKEN", token);
         Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(archive)).StatusCode);
-        var afterArchive = await client.GetFromJsonAsync<JsonElement>("/api/vwce/overview");
+        var afterArchive = await client.GetFromJsonAsync<JsonElement>("/api/vgla/overview");
         Assert.DoesNotContain(afterArchive.GetProperty("accounts").EnumerateArray(), item =>
             item.GetProperty("id").GetGuid() == accountId);
     }
@@ -250,7 +250,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
             HandleCookies = true,
         });
         var token = await GetAntiforgeryToken(client);
-        using var create = new HttpRequestMessage(HttpMethod.Post, "/api/vwce/accounts")
+        using var create = new HttpRequestMessage(HttpMethod.Post, "/api/vgla/accounts")
         {
             Content = JsonContent.Create(new { name = $"Rent pool broker {Guid.NewGuid():N}", description = (string?)null }),
         };
@@ -265,7 +265,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
                 WHERE (household_id, owner_user_id) = (
                   SELECT account.household_id, account.owner_user_id FROM vwce_accounts account WHERE account.id = @account_id
                 );
-                INSERT INTO vwce_lots (household_id, account_id, shares, unit_price_czk, acquired_at)
+                INSERT INTO vwce_lots (household_id, account_id, shares, unit_price_eur, acquired_at)
                 SELECT household_id, @account_id, 1.00000000, 3000.00, now() - interval '1 day'
                 FROM vwce_accounts WHERE id = @account_id;
                 """, connection);
@@ -288,7 +288,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         Assert.Equal(40m, deferred.GetProperty("rentPoolCzk").GetDecimal());
         Assert.Equal(JsonValueKind.Null, deferred.GetProperty("id").ValueKind);
 
-        var afterDeferred = await client.GetFromJsonAsync<JsonElement>("/api/vwce/overview");
+        var afterDeferred = await client.GetFromJsonAsync<JsonElement>("/api/vgla/overview");
         Assert.Equal(40m, afterDeferred.GetProperty("totals").GetProperty("rentPoolCzk").GetDecimal());
         Assert.DoesNotContain(afterDeferred.GetProperty("recentMovements").EnumerateArray(), movement =>
             movement.GetProperty("accountId").GetGuid() == accountId && movement.GetProperty("type").GetString() == "rent_payout");
@@ -306,7 +306,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         Assert.Equal(100m, paid.GetProperty("amountCzk").GetDecimal());
         Assert.Equal(0m, paid.GetProperty("rentPoolCzk").GetDecimal());
 
-        var afterPayout = await client.GetFromJsonAsync<JsonElement>("/api/vwce/overview");
+        var afterPayout = await client.GetFromJsonAsync<JsonElement>("/api/vgla/overview");
         Assert.Equal(0m, afterPayout.GetProperty("totals").GetProperty("rentPoolCzk").GetDecimal());
         Assert.Contains(afterPayout.GetProperty("recentMovements").EnumerateArray(), movement =>
             movement.GetProperty("accountId").GetGuid() == accountId
@@ -333,7 +333,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
                   INSERT INTO users (
                     id, user_name, normalized_user_name, display_name, security_stamp, concurrency_stamp
                   ) VALUES (
-                    gen_random_uuid(), @other_name, upper(@other_name), 'Hidden VWCE owner',
+                    gen_random_uuid(), @other_name, upper(@other_name), 'Hidden VGLA owner',
                     gen_random_uuid()::text, gen_random_uuid()::text
                   ) RETURNING id
                 ), membership AS (
@@ -351,23 +351,23 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
                   SELECT @hidden_account_id, household_id, other_user.id, @hidden_name FROM context, other_user
                 ), priced_lot AS (
                   INSERT INTO vwce_lots (
-                    id, household_id, account_id, shares, unit_price_czk, acquired_at
+                    id, household_id, account_id, shares, unit_price_eur, acquired_at
                   )
                   SELECT @priced_lot_id, household_id, @account_id, 2.00000000, 1000.00, now() - interval '2 days'
                   FROM context
                 ), unknown_lot AS (
-                  INSERT INTO vwce_lots (household_id, account_id, shares, unit_price_czk, acquired_at)
+                  INSERT INTO vwce_lots (household_id, account_id, shares, unit_price_eur, acquired_at)
                   SELECT household_id, @account_id, 1.00000000, NULL, now() - interval '1 day' FROM context
                 ), disposal AS (
                   INSERT INTO vwce_disposals (
-                    id, household_id, account_id, kind, shares, unit_price_czk,
-                    proceeds_czk, disposed_at, note
+                    id, household_id, account_id, kind, shares, unit_price_eur,
+                    proceeds_eur, disposed_at, note
                   )
                   SELECT @disposal_id, household_id, @account_id, 'rent_payout', 0.50000000,
                     1200.00, 600.00, now(), 'Rent payout' FROM context
                 )
                 INSERT INTO vwce_lot_allocations (
-                  household_id, disposal_id, lot_id, shares, cost_basis_czk
+                  household_id, disposal_id, lot_id, shares, cost_basis_eur
                 )
                 SELECT household_id, @disposal_id, @priced_lot_id, 0.50000000, 500.00 FROM context
                 """, connection);
@@ -382,7 +382,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         }
 
         using var client = fixture.CreateClient();
-        var response = await client.GetAsync("/api/vwce/overview");
+        var response = await client.GetAsync("/api/vgla/overview");
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -390,7 +390,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         var account = accounts.Single(item => item.GetProperty("id").GetGuid() == accountId);
         Assert.DoesNotContain(accounts, item => item.GetProperty("id").GetGuid() == hiddenAccountId);
         Assert.Equal(2.5m, account.GetProperty("shares").GetDecimal());
-        Assert.Equal(1500m, account.GetProperty("costBasisCzk").GetDecimal());
+        Assert.Equal(1500m, account.GetProperty("costBasisEur").GetDecimal());
         Assert.False(account.GetProperty("costBasisComplete").GetBoolean());
         Assert.Equal(2m, payload.GetProperty("totals").GetProperty("rentRatePercent").GetDecimal());
         Assert.Contains(payload.GetProperty("recentMovements").EnumerateArray(),
@@ -409,7 +409,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
         Guid idempotencyKey,
         object body)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/vwce/payouts")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/vgla/payouts")
         {
             Content = JsonContent.Create(body),
         };
@@ -421,7 +421,7 @@ public sealed class VwceApiTests(IdentityApiFixture fixture)
     private static Task<HttpResponseMessage> SendPurchase(
         HttpClient client, Guid accountId, string token, Guid idempotencyKey, object body)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/vwce/accounts/{accountId}/purchases")
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/vgla/accounts/{accountId}/purchases")
         {
             Content = JsonContent.Create(body),
         };

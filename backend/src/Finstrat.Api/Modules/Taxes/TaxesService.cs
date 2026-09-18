@@ -84,7 +84,7 @@ public sealed class TaxesService(ApplicationDbContext dbContext, StrategyService
                   (id,household_id,owner_user_id,original_amount_czk,deferred_at,note,created_by)
                 VALUES (@id,@h,@u,@amount,current_date,@note,@u);
                 INSERT INTO audit_events (household_id,actor_user_id,event_type,entity_type,entity_id,description,metadata)
-                VALUES (@h,@u,'deferred_vwce_created','deferred_vwce_obligation',@id,'Deferred VWCE realization created',jsonb_build_object('amount_czk',@amount));
+                VALUES (@h,@u,'deferred_vwce_created','deferred_vwce_obligation',@id,'Deferred VGLA realization created',jsonb_build_object('amount_czk',@amount));
                 """, connection, transaction);
             insert.Parameters.AddWithValue("id", id); insert.Parameters.AddWithValue("h", householdId); insert.Parameters.AddWithValue("u", userId);
             insert.Parameters.AddWithValue("amount", amount); insert.Parameters.AddWithValue("note", (object?)note ?? DBNull.Value);

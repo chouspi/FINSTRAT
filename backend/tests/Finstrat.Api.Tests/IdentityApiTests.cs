@@ -44,7 +44,7 @@ public sealed class IdentityApiFixture : WebApplicationFactory<Program>, IAsyncL
         });
         builder.ConfigureServices(services =>
         {
-            services.AddHttpClient("vwce-price")
+            services.AddHttpClient("vgla-price")
                 .ConfigurePrimaryHttpMessageHandler(() => new VwcePriceHandler());
             services.AddHttpClient("btc-price")
                 .ConfigurePrimaryHttpMessageHandler(() => new BtcPriceHandler());

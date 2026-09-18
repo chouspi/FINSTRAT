@@ -33,9 +33,9 @@ type BitcoinOverview = {
 }
 type BtcPrice = { priceCzk: number }
 type VwceOverview = {
-  totals: { shares: number; costBasisCzk: number; accountCount: number; costBasisComplete: boolean; rentRatePercent: number }
+  totals: { shares: number; costBasisEur: number; accountCount: number; costBasisComplete: boolean; rentRatePercent: number }
 }
-type VwcePrice = { priceCzk: number }
+type VwcePrice = { priceCzk: number; eurCzk: number }
 
 const czk = new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })
 
@@ -47,8 +47,8 @@ export function DashboardPage() {
   const strategy = useQuery({ queryKey: ['strategy', 'overview'], queryFn: () => apiRequest<StrategyOverview>('/api/strategy/overview'), retry: false })
   const bitcoin = useQuery({ queryKey: ['bitcoin', 'overview'], queryFn: () => apiRequest<BitcoinOverview>('/api/bitcoin/overview'), retry: false })
   const btcPrice = useQuery({ queryKey: ['market-data', 'btc-price'], queryFn: () => apiRequest<BtcPrice>('/api/market-data/btc-price'), retry: false })
-  const vwce = useQuery({ queryKey: ['vwce', 'overview'], queryFn: () => apiRequest<VwceOverview>('/api/vwce/overview'), retry: false })
-  const vwcePrice = useQuery({ queryKey: ['market-data', 'vwce-price'], queryFn: () => apiRequest<VwcePrice>('/api/market-data/vwce-price'), retry: false })
+  const vwce = useQuery({ queryKey: ['vgla', 'overview'], queryFn: () => apiRequest<VwceOverview>('/api/vgla/overview'), retry: false })
+  const vwcePrice = useQuery({ queryKey: ['market-data', 'vgla-price'], queryFn: () => apiRequest<VwcePrice>('/api/market-data/vgla-price'), retry: false })
   const due = (overview.data?.scheduledPayments ?? []).filter((payment) => payment.isDue)
   const amount = due.reduce((sum, payment) => sum + payment.amountCzk, 0)
   const points = Array.isArray(wealth.data?.points) ? wealth.data.points : []
@@ -63,7 +63,7 @@ export function DashboardPage() {
         <p>Sledovaná aktiva − dluhy, bez hotovosti</p>
         <div className="dashboard-net-worth-breakdown">
           <DashboardMetric label="BTC" value={current?.btcValueCzk} tone="btc" />
-          <DashboardMetric label="VWCE" value={current?.vwceValueCzk} />
+          <DashboardMetric label="VGLA" value={current?.vwceValueCzk} />
           {(current?.consumerDebtCzk ?? 0) > 0 && <DashboardMetric label="Dluhy" value={-(current?.consumerDebtCzk ?? 0)} tone="debt" />}
         </div>
       </div>
@@ -73,7 +73,7 @@ export function DashboardPage() {
       <IncomePlanCard data={income.data} onClick={() => void navigate({ to: '/income-plan', search: { dialog: undefined } })} />
       <StrategyCard data={strategy.data} onClick={() => void navigate({ to: '/strategy' })} />
       <BitcoinAccountsCard data={bitcoin.data} priceCzk={btcPrice.data?.priceCzk} onClick={() => void navigate({ to: '/bitcoin', search: { dialog: undefined } })} />
-      <VwcePortfolioCard data={vwce.data} priceCzk={vwcePrice.data?.priceCzk} onClick={() => void navigate({ to: '/vwce', search: { dialog: undefined } })} />
+      <VwcePortfolioCard data={vwce.data} priceCzk={vwcePrice.data?.priceCzk} eurCzk={vwcePrice.data?.eurCzk} onClick={() => void navigate({ to: '/vgla', search: { dialog: undefined } })} />
     </div>
     {due.length > 0 && <div className="dashboard-due-backdrop"><section className="dashboard-due-dialog" role="dialog" aria-modal="true" aria-labelledby="dashboard-due-title"><div><Banknote size={19} /></div><span>PLÁNOVANÉ SPLÁTKY</span><h2 id="dashboard-due-title">Je čas potvrdit splátky</h2><p>{due.length === 1 ? 'Jedna plánovaná splátka dosáhla data splatnosti.' : `${due.length} plánované splátky dosáhly data splatnosti.`} Celkem {czk.format(amount)}.</p><button type="button" onClick={() => void navigate({ to: '/debts', search: { dialog: undefined } })}>OK, přejít na Dluhy</button></section></div>}
   </section>
@@ -92,17 +92,17 @@ function BitcoinAccountsCard({ data, priceCzk, onClick }: { data?: BitcoinOvervi
   </button>
 }
 
-function VwcePortfolioCard({ data, priceCzk, onClick }: { data?: VwceOverview; priceCzk?: number; onClick: () => void }) {
+function VwcePortfolioCard({ data, priceCzk, eurCzk, onClick }: { data?: VwceOverview; priceCzk?: number; eurCzk?: number; onClick: () => void }) {
   const totals = data?.totals
   const price = typeof priceCzk === 'number' && Number.isFinite(priceCzk) && priceCzk > 0 ? priceCzk : null
   const shares = typeof totals?.shares === 'number' ? totals.shares : null
-  const costBasis = typeof totals?.costBasisCzk === 'number' ? totals.costBasisCzk : null
+  const costBasis = typeof totals?.costBasisEur === 'number' && typeof eurCzk === 'number' ? totals.costBasisEur * eurCzk : null
   const value = price !== null && shares !== null ? shares * price : null
   const gain = value !== null && costBasis !== null ? value - costBasis : null
   const annualRent = value !== null && typeof totals?.rentRatePercent === 'number' ? value * totals.rentRatePercent / 100 : null
-  return <button className="dashboard-card dashboard-asset-card dashboard-vwce-card" type="button" aria-label="Otevřít VWCE portfolio" onClick={onClick}>
-    <DashboardCardHeader title="VWCE Portfolio" />
-    <div className="dashboard-asset-main"><span>Hodnota VWCE</span><strong>{value === null ? '—' : czk.format(value)}</strong><small>{shares === null ? 'Načítám…' : `${shares.toLocaleString('cs-CZ', { maximumFractionDigits: 4 })} ks`}</small></div>
+  return <button className="dashboard-card dashboard-asset-card dashboard-vwce-card" type="button" aria-label="Otevřít VGLA portfolio" onClick={onClick}>
+    <DashboardCardHeader title="VGLA Portfolio" />
+    <div className="dashboard-asset-main"><span>Hodnota VGLA</span><strong>{value === null ? '—' : czk.format(value)}</strong><small>{shares === null ? 'Načítám…' : `${shares.toLocaleString('cs-CZ', { maximumFractionDigits: 4 })} ks`}</small></div>
     <div className="dashboard-asset-footer"><DashboardSmallMetric label="Zisk / Ztráta" value={gain === null ? '—' : czk.format(gain)} tone={gain === null ? undefined : gain >= 0 ? 'positive' : 'negative'} /><DashboardSmallMetric label="Renta / měs." value={annualRent === null ? '—' : czk.format(annualRent / 12)} tone={annualRent && annualRent > 0 ? 'positive' : undefined} /></div>
   </button>
 }
@@ -116,7 +116,7 @@ function StrategyCard({ data, onClick }: { data?: StrategyOverview; onClick: () 
     <div className="dashboard-strategy-main"><span>Hodnota BTC portfolia</span><strong>{valid ? czk.format(data.portfolioValueCzk) : '—'}</strong><small>{valid ? `${data.btcQuantity.toFixed(6)} BTC` : 'Načítám strategii…'}</small></div>
     <div className="dashboard-strategy-status"><div><span>Zisk od checkpointu</span><strong className={data && data.profitCzk < 0 ? 'negative' : undefined}>{valid ? czk.format(data.profitCzk) : '—'}</strong></div><b className={tone}>{recommendation}</b></div>
     <div className="dashboard-strategy-progress"><div><span style={{ width: `${valid ? Math.min(100, Math.max(0, data.progressPercent)) : 0}%` }} /></div><small>{data ? `Trigger ${czk.format(data.triggerCzk)}` : 'Trigger'}</small><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></div>
-    {valid && data.recommendedTransferCzk > 0 && <p>Celkem přesunout do VWCE: <strong>{czk.format(data.recommendedTransferCzk)}</strong></p>}
+    {valid && data.recommendedTransferCzk > 0 && <p>Celkem přesunout do VGLA: <strong>{czk.format(data.recommendedTransferCzk)}</strong></p>}
   </button>
 }
 

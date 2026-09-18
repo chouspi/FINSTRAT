@@ -78,7 +78,7 @@ const taxesRoute = createRoute({
 });
 const vwceRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/vwce",
+  path: "/vgla",
   component: VwcePage,
   validateSearch: (search: Record<string, unknown>) => ({
     dialog:

@@ -346,7 +346,7 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
   const { scheduledApplied, deferredApplied, debtBudget } = allocation;
   const { btcAmount: directBtcAmount, vwceAmount } = redirectBtcToDeferredVwce(allocation.btcAmount, initial.deferredVwceCzk ?? 0);
   const rows = [
-    ...(vwceAmount > .005 ? [{ key: "vwce", label: "VWCE místo BTC", note: `zbývá v poolu ${czk.format(initial.deferredVwceCzk ?? 0)}`, percent: validAmount && amount > 0 ? vwceAmount / amount * 100 : 0, amount: vwceAmount, icon: Landmark, tone: "blue" }] : []),
+    ...(vwceAmount > .005 ? [{ key: "vwce", label: "VGLA místo BTC", note: `zbývá v poolu ${czk.format(initial.deferredVwceCzk ?? 0)}`, percent: validAmount && amount > 0 ? vwceAmount / amount * 100 : 0, amount: vwceAmount, icon: Landmark, tone: "blue" }] : []),
     ...(directBtcAmount > .005 || vwceAmount <= .005 ? [{ key: "btc", label: "Bitcoin", note: "dlouhodobý kapitál", percent: validAmount && amount > 0 ? Math.round(directBtcAmount / amount * 1000) / 10 : percentages.btc, amount: directBtcAmount, icon: Bitcoin, tone: "copper" }] : []),
     ...(hasDebts ? [{ key: "debt", label: "Dluhy", note: deferredApplied > 0 ? `předčasné splátky · včetně ${czk.format(deferredApplied)} odložených` : "předčasné splátky", percent: validAmount && amount > 0 ? Math.round((debtBudget + scheduledApplied) / amount * 1000) / 10 : percentages.debt, amount: debtBudget + scheduledApplied, icon: Landmark, tone: "red" }] : []),
     { key: "cash", label: "Spending účet", note: "běžné výdaje", percent: validAmount && amount > 0 ? Math.round((cashAmountToProcess ?? allocation.cashAmount) / amount * 1000) / 10 : percentages.cash, amount: cashAmountToProcess ?? allocation.cashAmount, icon: Wallet, tone: "green" },
@@ -541,7 +541,7 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
               : "Kontrola připsání CZK selhala";
 
   const workflowSteps = [
-    ...(vwceAmount > .005 ? [{ label: "VWCE", state: vwceDone ? "Vyčleněno" : "Vyčlenit částku", done: vwceDone }] : []),
+    ...(vwceAmount > .005 ? [{ label: "VGLA", state: vwceDone ? "Vyčleněno" : "Vyčlenit částku", done: vwceDone }] : []),
     ...(directBtcAmount > .005 ? [{ label: "Bitcoin", state: (btcPurchase.isSuccess || !!draft.purchaseResult) ? "Hotovo" : btcStatusPhase === "error" ? "Vyžaduje pozornost" : btcPurchase.isPending ? "Probíhá nákup" : btcSent ? "Vklad odeslán" : "Odeslat vklad", done: (btcPurchase.isSuccess || !!draft.purchaseResult) }] : []),
     ...(candidateDebtPayments.length > 0 || debtPayments.length > 0 ? [{ label: "Splátky", state: debtStep === "complete" ? (processedDebtIds.length < debtPayments.length ? "Odloženo" : "Zapsáno") : debtStep === "active" ? `${processedDebtIds.length} / ${debtPayments.length} zapsáno` : "Čeká", done: debtStep === "complete" }] : []),
     ...(allocation.cashAmount > .005 ? [{ label: "Spending", state: cashStep === "complete" ? "Odeslání potvrzeno" : cashStep === "active" ? "Odeslat převod" : "Čeká", done: cashStep === "complete" }] : []),
@@ -553,7 +553,7 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
     {processing && btcSent && cashStep === "complete" && (vwceAmount <= .005 || vwceDone) && <section className="income-run-summary" aria-label="Souhrn příjmu">
       <h2>Souhrn příjmu</h2><dl>
         {directBtcAmount > .005 && <div><dt>Bitcoin · {draft.purchaseResult ? "nakoupeno" : "čeká na dokončení"}</dt><dd>{czk.format(btcAmountToProcess)}</dd></div>}
-        {vwceAmount > .005 && <div><dt>Vyčleněno na VWCE</dt><dd>{czk.format(vwceAmount)}</dd></div>}
+        {vwceAmount > .005 && <div><dt>Vyčleněno na VGLA</dt><dd>{czk.format(vwceAmount)}</dd></div>}
         {debtPayments.some((payment) => processedDebtIds.includes(payment.debt.id)) && <div><dt>Zapsané splátky</dt><dd>{czk.format(debtPayments.filter((payment) => processedDebtIds.includes(payment.debt.id)).reduce((sum, payment) => sum + payment.amount, 0))}</dd></div>}
         {debtPayments.some((payment) => !processedDebtIds.includes(payment.debt.id)) && <div><dt>Odložené splátky</dt><dd>{czk.format(debtPayments.filter((payment) => !processedDebtIds.includes(payment.debt.id)).reduce((sum, payment) => sum + payment.amount, 0))}</dd></div>}
         {scheduledApplied > .005 && <div><dt>Ponecháno na pravidelné splátky</dt><dd>{czk.format(scheduledApplied)}</dd></div>}
@@ -590,7 +590,7 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
                 <div className="income-debt-workflow-actions"><button className="income-debt-processed" type="button" disabled={debtPending} onClick={() => recordDebtPayment.mutate({ debtId: currentDebtPayment.debt.id, amountCzk: currentDebtPayment.amount, deferredAmount: currentDebtPayment.deferredAmount, expectedDeferred: localDeferredBalance })}>{recordDebtPayment.isPending ? "Zapisuji…" : "Zapsat uhrazenou splátku"}</button><button className="income-debt-defer" type="button" disabled={debtPending} onClick={deferRemaining}>{deferRemainingDebts.isPending ? "Odkládám…" : "Odložit zbývající splátky"}</button></div>
                   {(recordDebtPayment.error || deferRemainingDebts.error) && <p className="income-workflow-error" role="alert">{recordDebtPayment.error?.message ?? deferRemainingDebts.error?.message}</p>}
               </div>}
-              {row.key === "vwce" && processing && !vwceDone && <div className="income-cash-processing"><strong>Vyčlenit na nákup VWCE</strong><button className="income-debt-processed" type="button" onClick={() => updateDraft({ processingOverview: initial, vwceDone: true })}>Částka vyčleněna</button><span>Nákup a čerpání poolu zapište v tabu VWCE.</span></div>}
+              {row.key === "vwce" && processing && !vwceDone && <div className="income-cash-processing"><strong>Vyčlenit na nákup VGLA</strong><button className="income-debt-processed" type="button" onClick={() => updateDraft({ processingOverview: initial, vwceDone: true })}>Částka vyčleněna</button><span>Nákup a čerpání poolu zapište v tabu VGLA.</span></div>}
               {row.key === "cash" && allocation.cashAmount > .005 && cashStep === "active" && <CashPaymentQr amountCzk={row.amount} iban={settings.cashAccountIban} onComplete={() => updateDraft({ cashStep: "complete" })} />}
             </article>
           </div>;

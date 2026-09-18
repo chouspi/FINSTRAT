@@ -118,8 +118,8 @@ export function WealthPage() {
     retry: false,
   });
   const vwce = useQuery({
-    queryKey: ["vwce", "overview"],
-    queryFn: () => apiRequest<VwceOverview>("/api/vwce/overview"),
+    queryKey: ["vgla", "overview"],
+    queryFn: () => apiRequest<VwceOverview>("/api/vgla/overview"),
     retry: false,
   });
   const debts = useQuery({
@@ -531,7 +531,7 @@ export function WealthPage() {
             share={btcShare}
           />
           <BreakdownRow
-            label="VWCE"
+            label="VGLA"
             tone="vwce"
             detail={
               current?.vwceShares
@@ -626,7 +626,7 @@ function MonthlyRentChart({
       <svg
         viewBox="0 0 1000 250"
         role="img"
-        aria-label="Graf vývoje měsíční renty z VWCE"
+        aria-label="Graf vývoje měsíční renty z VGLA"
       >
         {[0, 1, 2].map((step) => {
           const gridY = top + (step / 2) * (bottom - top);
@@ -692,7 +692,7 @@ function MonthlyRentChart({
         >
           <span>{date.format(new Date(`${active.date}T12:00:00`))}</span>
           <strong>Měsíční renta {czk.format(values[hovered])}</strong>
-          <small>Hodnota VWCE {czk.format(active.vwceValueCzk)}</small>
+          <small>Hodnota VGLA {czk.format(active.vwceValueCzk)}</small>
         </div>
       )}
     </div>

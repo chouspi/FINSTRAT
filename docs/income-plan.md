@@ -54,8 +54,8 @@ kroky, sledování Coinmate a idempotency klíče. Dokončený běh zůstává d
 souhrnem až do akce Nový příjem. Zavření panelu či vymazání úložiště není trvalá
 historie příjmů a obnova mezi zařízeními není podporována.
 
-Nulové BTC, předčasné splátky a Spending se přeskakují. VWCE krok pouze potvrzuje
-vyčlenění peněz; skutečný nákup a čerpání poolu zůstávají v tabu VWCE. Souhrn tyto
+Nulové BTC, předčasné splátky a Spending se přeskakují. VGLA krok pouze potvrzuje
+vyčlenění peněz; skutečný nákup a čerpání poolu zůstávají v tabu VGLA. Souhrn tyto
 částky označuje jako vyčleněné, nikoli nakoupené.
 
 Úpravy odložených splátek přijímají volitelný Idempotency-Key. Klient jej ukládá

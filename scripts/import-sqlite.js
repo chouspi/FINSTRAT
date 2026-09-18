@@ -180,7 +180,8 @@ async function main() {
     }
 
     const vwceAccountIds = new Map();
-    for (const row of rows('vwce_accounts')) {
+    // Legacy VWCE positions are intentionally not imported after the VGLA cutover.
+    for (const row of []) {
       const newId = id();
       vwceAccountIds.set(row.id, newId);
       await client.query(
@@ -207,7 +208,7 @@ async function main() {
     }
 
     const reallocationIds = new Map();
-    const inboundTransfers = rows('vwce_transfers').filter((row) => row.direction === 'in');
+    const inboundTransfers = [];
     for (const row of inboundTransfers) {
       const newId = id();
       reallocationIds.set(row.id, newId);
@@ -260,11 +261,7 @@ async function main() {
         kind = 'life_expense';
         targetId = expenseIds.get(row.purpose_ref_id);
         targetColumn = 'life_expense_id';
-      } else if (row.purpose === 'vwce') {
-        kind = 'vwce_reallocation';
-        targetId = reallocationIds.get(row.purpose_ref_id);
-        targetColumn = 'vwce_reallocation_id';
-      } else if (row.purpose != null) {
+      } else if (row.purpose != null && row.purpose !== 'vwce') {
         throw new Error(`Unsupported withdrawal purpose ${row.purpose} on ${row.id}`);
       }
       if (targetColumn && !targetId) throw new Error(`Missing target for withdrawal ${row.id}`);
@@ -304,7 +301,7 @@ async function main() {
 
     const vwceLotsByAccount = new Map();
     const vwceLotIds = new Map();
-    for (const row of rows('vwce_purchases', 'purchased_at, id')) {
+    for (const row of []) {
       const accountId = vwceAccountIds.get(row.account_id);
       if (!accountId) throw new Error(`Missing VWCE account ${row.account_id} for purchase ${row.id}`);
       const sourceReallocationId = row.transfer_id == null ? null : reallocationIds.get(row.transfer_id);
@@ -333,7 +330,7 @@ async function main() {
       await insertMap(client, importId, 'vwce_purchases', row.id, newId);
     }
 
-    for (const row of rows('vwce_transfers').filter((item) => item.direction === 'out')) {
+    for (const row of []) {
       const accountId = vwceAccountIds.get(row.vwce_account_id);
       if (!accountId || !(row.shares > 0) || !(row.price_czk > 0)) {
         throw new Error(`Incomplete VWCE payout ${row.id}`);
@@ -366,7 +363,7 @@ async function main() {
     }
 
     const obligationIds = new Map();
-    for (const row of rows('deferred_vwce_pool')) {
+    for (const row of []) {
       const newId = id();
       obligationIds.set(row.id, newId);
       await client.query(
@@ -380,7 +377,7 @@ async function main() {
       );
       await insertMap(client, importId, 'deferred_vwce_pool', row.id, newId);
     }
-    for (const row of rows('deferred_vwce_allocations')) {
+    for (const row of []) {
       const obligationId = obligationIds.get(row.pool_id);
       const vwceLotId = vwceLotIds.get(row.vwce_purchase_id);
       if (!obligationId || !vwceLotId) throw new Error(`Invalid deferred allocation ${row.id}`);
@@ -545,8 +542,8 @@ async function main() {
         accounts: rows('accounts').length,
         purchases: rows('purchases').length,
         withdrawals: rows('withdrawals').length,
-        vwce_accounts: rows('vwce_accounts').length,
-        vwce_purchases: rows('vwce_purchases').length,
+        vwce_accounts: 0,
+        vwce_purchases: 0,
         life_expenses: rows('life_expenses').length,
         debts: rows('debts').length,
         debt_payments: allPayments.length,

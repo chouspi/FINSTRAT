@@ -453,7 +453,7 @@ public sealed class BitcoinApiTests(IdentityApiFixture fixture)
                   household_id, account_id, kind, quantity_btc, unit_price_czk,
                   disposed_at, note, vwce_reallocation_id, created_by)
                 SELECT account.household_id, @account_id, 'vwce_reallocation', 0.05000000,
-                  1500000, now(), 'Převod do VWCE', reallocation.id, account.owner_user_id
+                  1500000, now(), 'Převod do VGLA', reallocation.id, account.owner_user_id
                 FROM account CROSS JOIN reallocation
                 """, connection);
             setup.Parameters.AddWithValue("account_id", accountId);
@@ -464,11 +464,11 @@ public sealed class BitcoinApiTests(IdentityApiFixture fixture)
         var ownerMovement = Assert.Single(ownerOverview.GetProperty("recentMovements").EnumerateArray(),
             movement => movement.GetProperty("accountId").GetGuid() == accountId);
         Assert.Equal("vwce_reallocation", ownerMovement.GetProperty("type").GetString());
-        Assert.Equal("Převod do VWCE", ownerMovement.GetProperty("note").GetString());
+        Assert.Equal("Převod do VGLA", ownerMovement.GetProperty("note").GetString());
 
         var ownerMovements = await client.GetFromJsonAsync<JsonElement>($"/api/bitcoin/accounts/{accountId}/movements");
         Assert.Equal("vwce_reallocation", ownerMovements[0].GetProperty("type").GetString());
-        Assert.Equal("Převod do VWCE", ownerMovements[0].GetProperty("note").GetString());
+        Assert.Equal("Převod do VGLA", ownerMovements[0].GetProperty("note").GetString());
 
         token = await GetAntiforgeryToken(client);
         using var logout = new HttpRequestMessage(HttpMethod.Post, "/api/identity/logout");

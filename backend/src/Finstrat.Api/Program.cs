@@ -73,7 +73,7 @@ builder.Services.AddHttpClient("btc-price", client =>
     client.Timeout = TimeSpan.FromSeconds(4);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("FINSTRAT/2.0");
 });
-builder.Services.AddHttpClient("vwce-price", client =>
+builder.Services.AddHttpClient("vgla-price", client =>
 {
     client.BaseAddress = new Uri("https://query1.finance.yahoo.com/");
     client.Timeout = TimeSpan.FromSeconds(8);

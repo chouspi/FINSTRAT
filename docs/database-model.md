@@ -17,7 +17,7 @@
 ## Proc se nekopiruje SQLite schema 1:1
 
 Soucasny projekt prepocitava FIFO z nakupu a vyberu pri kazdem dotazu. Vazba
-vyberu na interni prevod, zivotni vydaj nebo VWCE je polymorfni dvojice
+vyberu na interni prevod, zivotni vydaj nebo VGLA je polymorfni dvojice
 `purpose + purpose_ref_id`, kterou databaze nedokaze ochranit cizim klicem.
 Dluh uchovava pouze menitelny aktualni zustatek a obecne nastaveni kombinuje
 konfiguraci, tajne hodnoty i odvozeny stav.
@@ -52,20 +52,20 @@ loty. Cilovy lot odkazuje na zdrojovy lot a nese nove `tax_acquired_at`, protoze
 soucasna domenova logika prevodem restartuje casovy test. Toto pravidlo je
 potreba pred migraci pravne potvrdit; model umi zachovat i puvodni datum.
 
-### VWCE a strategicke operace
+### VGLA a strategicke operace
 
-Nakupy jsou `vwce_lots`, prodeje/renta `vwce_disposals`. Prevod BTC do VWCE je
+Nakupy jsou `vwce_lots`, prodeje/renta `vwce_disposals`. Prevod BTC do VGLA je
 `vwce_reallocations`, na ktery mohou odkazovat BTC disposals i jeden nebo vice
-VWCE lotu. Provizorni lot je skutecny boolean a muze byt pozdeji nahrazen
+VGLA lotu. Provizorni lot je skutecny boolean a muze byt pozdeji nahrazen
 potvrzenym lotem bez pretizene tabulky transferu.
 
 Odlozena realizace je `deferred_vwce_obligations`; jeji cerpani je vazebni
-tabulka na konkretni VWCE lot. `original = allocated + cancelled + remaining`
+tabulka na konkretni VGLA lot. `original = allocated + cancelled + remaining`
 se pri zapisu musi kontrolovat v jedne databazove transakci se zamkem radku.
 
 Nevyplacena mala renta se drzi per uzivatel v `vwce_rent_pools`. Radek se pri
 zpracovani renty zamyka a vyplata pod 100 Kc se pouze pricte do poolu. Prodej
-VWCE a vynulovani poolu probiha atomicky az po dosazeni minima.
+VGLA a vynulovani poolu probiha atomicky az po dosazeni minima.
 
 ### Dluhy
 
@@ -81,8 +81,8 @@ agregat a volitelne pouzite ceny. Rekonstruovany snapshot je odlisitelny od
 pozorovaneho.
 
 `wealth_snapshots` je presna denni, uzivatelsky oddelena rada pro Dashboard.
-Uklada mnozstvi, pouzite CZK ceny, trzni hodnoty a porizovaci ceny BTC/VWCE,
-spotrebitelske dluhy a hypoteku. Hlavni hodnota je `BTC + VWCE - spotrebitelske
+Uklada mnozstvi, pouzite CZK ceny, trzni hodnoty a porizovaci ceny BTC/VGLA,
+spotrebitelske dluhy a hypoteku. Hlavni hodnota je `BTC + VGLA - spotrebitelske
 dluhy`; Cash ani hypoteka se do ni nezapocitavaji. Server aktualizuje dnesni bod
 pri nacteni a planovany job jej uzavira v 23:55 casove zony domacnosti.
 
@@ -115,7 +115,7 @@ uzavrena repository operace; nemaji se obchazet obecnym CRUD API.
 
 Import ze SQLite bude samostatny, opakovatelny ETL proces. Pred prepnuti musi
 vygenerovat report s pocty radku, sirotky, chybejicimi cenami, chronologicky
-zapornymi zustatky, soucty BTC/VWCE/dluhu a kontrolou SHA-256 ownership proofu.
+zapornymi zustatky, soucty BTC/VGLA/dluhu a kontrolou SHA-256 ownership proofu.
 Stara numericka ID se nemaji pouzit jako nova PK; mapovani patri do docasne
 importni tabulky nebo exportniho reportu.
 

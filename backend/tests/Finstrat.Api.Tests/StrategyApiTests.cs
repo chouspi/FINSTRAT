@@ -165,7 +165,7 @@ public sealed class StrategyApiTests(IdentityApiFixture fixture)
         Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(request)).StatusCode);
         overview = await client.GetFromJsonAsync<JsonElement>("/api/strategy/overview");
         Assert.Equal(25000m, overview.GetProperty("settings").GetProperty("checkpointTriggerFloorCzk").GetDecimal());
-        var vwceOverview = await client.GetFromJsonAsync<JsonElement>("/api/vwce/overview");
+        var vwceOverview = await client.GetFromJsonAsync<JsonElement>("/api/vgla/overview");
         Assert.Equal(2.5m, vwceOverview.GetProperty("totals").GetProperty("rentRatePercent").GetDecimal());
 
         token = (await client.GetFromJsonAsync<JsonElement>("/api/identity/antiforgery")).GetProperty("token").GetString()!;

@@ -16,6 +16,7 @@ public sealed class VwcePriceServiceTests
 
         Assert.Equal(165.79m, first.PriceEur);
         Assert.Equal(3998.8548m, first.PriceCzk);
+        Assert.Equal(24.1200m, first.EurCzk);
         Assert.Equal("yahoo-finance", first.Source);
         Assert.False(first.IsStale);
         Assert.Equal(first, second);

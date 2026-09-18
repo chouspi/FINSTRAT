@@ -31,7 +31,7 @@ describe('TaxesPage', () => {
 
     expect(await screen.findByText('KALENDÁŘ OSVOBOZENÍ')).toBeInTheDocument()
     expect(screen.getByText('Trezor')).toBeInTheDocument()
-    expect(screen.getByText('VWCE místo BTC pool')).toBeInTheDocument()
+    expect(screen.getByText('VGLA místo BTC pool')).toBeInTheDocument()
     expect(screen.getByText(/12[  ]000[  ]Kč/)).toBeInTheDocument()
     expect(screen.queryByText(/Orientační přehled/)).not.toBeInTheDocument()
   })

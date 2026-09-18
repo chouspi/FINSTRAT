@@ -26,7 +26,7 @@ public static class MarketDataEndpoints
         .WithTags("Market Data")
         .RequireAuthorization();
 
-        endpoints.MapGet("/api/market-data/vwce-price", async (
+        endpoints.MapGet("/api/market-data/vgla-price", async (
             VwcePriceService priceService,
             CancellationToken cancellationToken) =>
         {
@@ -40,7 +40,7 @@ public static class MarketDataEndpoints
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status503ServiceUnavailable,
-                    title: "VWCE price is temporarily unavailable");
+                    title: "VGLA price is temporarily unavailable");
             }
         })
         .WithTags("Market Data")

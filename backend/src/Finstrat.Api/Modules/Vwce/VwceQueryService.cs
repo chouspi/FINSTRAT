@@ -34,16 +34,16 @@ public sealed class VwceQueryService(ApplicationDbContext dbContext)
                 CASE WHEN lot.provisional THEN 'provisional_purchase'
                   WHEN lot.replaces_lot_id IS NOT NULL THEN 'replacement_purchase'
                   ELSE 'purchase' END AS type,
-                lot.shares, lot.unit_price_czk, NULL::numeric AS proceeds_czk,
+                lot.shares, lot.unit_price_eur, NULL::numeric AS proceeds_eur,
                 lot.acquired_at AS occurred_at, lot.note,
-                NOT lot.provisional AND lot.unit_price_czk IS NOT NULL
+                NOT lot.provisional AND lot.unit_price_eur IS NOT NULL
                   AND lot.source_reallocation_id IS NULL AND lot.replaces_lot_id IS NULL
                   AND NOT EXISTS (SELECT 1 FROM vwce_lot_allocations allocation WHERE allocation.lot_id = lot.id)
                   AND NOT EXISTS (SELECT 1 FROM deferred_vwce_allocations allocation WHERE allocation.vwce_lot_id = lot.id)
                   AND NOT EXISTS (SELECT 1 FROM vwce_lots replacement WHERE replacement.replaces_lot_id = lot.id)
                   AND NOT EXISTS (SELECT 1 FROM vwce_lots later WHERE later.account_id = lot.account_id AND (later.acquired_at, later.id) > (lot.acquired_at, lot.id))
                   AND NOT EXISTS (SELECT 1 FROM vwce_disposals later WHERE later.account_id = lot.account_id AND later.disposed_at >= lot.acquired_at) AS can_edit,
-                NOT lot.provisional AND lot.unit_price_czk IS NOT NULL
+                NOT lot.provisional AND lot.unit_price_eur IS NOT NULL
                   AND lot.source_reallocation_id IS NULL AND lot.replaces_lot_id IS NULL
                   AND NOT EXISTS (SELECT 1 FROM vwce_lot_allocations allocation WHERE allocation.lot_id = lot.id)
                   AND NOT EXISTS (SELECT 1 FROM deferred_vwce_allocations allocation WHERE allocation.vwce_lot_id = lot.id)
@@ -58,14 +58,14 @@ public sealed class VwceQueryService(ApplicationDbContext dbContext)
               )
               UNION ALL
               SELECT disposal.id, account.id, account.name, disposal.kind,
-                -disposal.shares, disposal.unit_price_czk, disposal.proceeds_czk,
+                -disposal.shares, disposal.unit_price_eur, disposal.proceeds_eur,
                 disposal.disposed_at, disposal.note, false, false
               FROM accessible_account account
               JOIN vwce_disposals disposal
                 ON disposal.household_id = account.household_id AND disposal.account_id = account.id
             )
-            SELECT id, account_id, account_name, type, shares, unit_price_czk,
-              proceeds_czk, occurred_at, note, can_edit, can_delete
+            SELECT id, account_id, account_name, type, shares, unit_price_eur,
+              proceeds_eur, occurred_at, note, can_edit, can_delete
             FROM movements ORDER BY occurred_at DESC, id DESC
             """, connection);
         command.Parameters.AddWithValue("household_id", householdId);
@@ -101,7 +101,7 @@ public sealed class VwceQueryService(ApplicationDbContext dbContext)
             return new VwceOverviewResponse(
                 new VwceTotalsResponse(
                     accounts.Sum(account => account.Shares),
-                    accounts.Sum(account => account.CostBasisCzk),
+                    accounts.Sum(account => account.CostBasisEur),
                     accounts.Count,
                     accounts.All(account => account.CostBasisComplete),
                     accounts.Sum(account => account.ProvisionalLotCount),
@@ -171,7 +171,7 @@ public sealed class VwceQueryService(ApplicationDbContext dbContext)
             SELECT
               account.id, account.name, account.description, owner.display_name,
               COALESCE(lots.remaining_shares, 0)::numeric(20,8),
-              COALESCE(lots.cost_basis_czk, 0)::numeric(20,2),
+              COALESCE(lots.cost_basis_eur, 0)::numeric(20,4),
               COALESCE(lots.basis_complete, true),
               COALESCE(lots.lot_count, 0),
               COALESCE(disposals.disposal_count, 0),
@@ -197,9 +197,9 @@ public sealed class VwceQueryService(ApplicationDbContext dbContext)
             LEFT JOIN LATERAL (
               SELECT
                 SUM(GREATEST(lot.shares - COALESCE(allocated.shares, 0), 0)) AS remaining_shares,
-                SUM(GREATEST(lot.shares - COALESCE(allocated.shares, 0), 0) * lot.unit_price_czk)
-                  FILTER (WHERE lot.unit_price_czk IS NOT NULL) AS cost_basis_czk,
-                COALESCE(BOOL_AND(lot.unit_price_czk IS NOT NULL)
+                SUM(GREATEST(lot.shares - COALESCE(allocated.shares, 0), 0) * lot.unit_price_eur)
+                  FILTER (WHERE lot.unit_price_eur IS NOT NULL) AS cost_basis_eur,
+                COALESCE(BOOL_AND(lot.unit_price_eur IS NOT NULL)
                   FILTER (WHERE lot.shares - COALESCE(allocated.shares, 0) > 0), true) AS basis_complete,
                 COUNT(*)::int AS lot_count,
                 COUNT(*) FILTER (
@@ -269,7 +269,7 @@ public sealed class VwceQueryService(ApplicationDbContext dbContext)
                   WHEN lot.replaces_lot_id IS NOT NULL THEN 'replacement_purchase'
                   ELSE 'purchase'
                 END AS type,
-                lot.shares, lot.unit_price_czk, NULL::numeric AS proceeds_czk,
+                lot.shares, lot.unit_price_eur, NULL::numeric AS proceeds_eur,
                  lot.acquired_at AS occurred_at, lot.note, false AS can_edit, false AS can_delete
               FROM accessible_accounts account
               JOIN vwce_lots lot ON lot.household_id = account.household_id AND lot.account_id = account.id
@@ -279,14 +279,14 @@ public sealed class VwceQueryService(ApplicationDbContext dbContext)
               )
               UNION ALL
               SELECT disposal.id, account.id, account.name, disposal.kind,
-                -disposal.shares, disposal.unit_price_czk, disposal.proceeds_czk,
+                -disposal.shares, disposal.unit_price_eur, disposal.proceeds_eur,
                  disposal.disposed_at, disposal.note, false, false
               FROM accessible_accounts account
               JOIN vwce_disposals disposal
                 ON disposal.household_id = account.household_id AND disposal.account_id = account.id
             )
-             SELECT id, account_id, account_name, type, shares, unit_price_czk,
-               proceeds_czk, occurred_at, note, can_edit, can_delete
+             SELECT id, account_id, account_name, type, shares, unit_price_eur,
+               proceeds_eur, occurred_at, note, can_edit, can_delete
             FROM movements
             ORDER BY occurred_at DESC, id DESC
             LIMIT 12

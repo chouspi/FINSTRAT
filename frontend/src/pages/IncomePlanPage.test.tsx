@@ -107,12 +107,12 @@ describe('IncomePlanPage', () => {
     expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('coinmate-balance-watch'))).toBe(false)
   })
 
-  it('processes a full VWCE allocation without BTC or Spending and restores its summary', async () => {
+  it('processes a full VGLA allocation without BTC or Spending and restores its summary', async () => {
     mockWorkflow(100, 0, 2000)
     const user = userEvent.setup()
     await renderPage('/income-plan?dialog=process')
     await user.click(await screen.findByRole('button', { name: 'Částka vyčleněna' }))
-    expect(await screen.findByRole('region', { name: 'Souhrn příjmu' })).toHaveTextContent('Vyčleněno na VWCE')
+    expect(await screen.findByRole('region', { name: 'Souhrn příjmu' })).toHaveTextContent('Vyčleněno na VGLA')
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
     cleanup()
     await renderPage('/income-plan?dialog=process')
@@ -122,7 +122,7 @@ describe('IncomePlanPage', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Souhrn příjmu' })).not.toBeInTheDocument())
   })
 
-  it('handles a partial VWCE allocation before BTC and skips zero Spending', async () => {
+  it('handles a partial VGLA allocation before BTC and skips zero Spending', async () => {
     mockWorkflow(100, 0, 250)
     const user = userEvent.setup()
     await renderPage('/income-plan?dialog=process')

@@ -67,7 +67,7 @@ export function StrategyPage() {
           <ArrowRight className="strategy-rule-arrow" size={17} aria-hidden="true" />
           <RuleStep number="02" label="Profit trigger" value={`${data.settings.checkpointTriggerPercent} %`} note={`Minimálně ${czk.format(data.settings.checkpointTriggerFloorCzk)}`} />
           <ArrowRight className="strategy-rule-arrow" size={17} aria-hidden="true" />
-          <RuleStep number="03" label="Převod do VWCE" value={czk.format(data.settings.realizationStepTransferCzk)} note={`Za každých ${czk.format(data.settings.realizationStepProfitCzk)} zisku`} tone="green" />
+          <RuleStep number="03" label="Převod do VGLA" value={czk.format(data.settings.realizationStepTransferCzk)} note={`Za každých ${czk.format(data.settings.realizationStepProfitCzk)} zisku`} tone="green" />
         </div>
       </section>
     </div>

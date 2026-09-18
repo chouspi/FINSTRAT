@@ -130,14 +130,14 @@ describe("DashboardPage", () => {
               recentMovements: [],
             }),
           } as Response;
-        if (url.endsWith("/vwce/overview"))
+        if (url.endsWith("/vgla/overview"))
           return {
             ok: true,
             status: 200,
             json: async () => ({
               totals: {
                 shares: 20,
-                costBasisCzk: 70000,
+                costBasisEur: 2800,
                 accountCount: 1,
                 costBasisComplete: true,
                 provisionalLotCount: 0,
@@ -157,11 +157,11 @@ describe("DashboardPage", () => {
               change24hPercent: 1,
             }),
           } as Response;
-        if (url.endsWith("/vwce-price"))
+        if (url.endsWith("/vgla-price"))
           return {
             ok: true,
             status: 200,
-            json: async () => ({ priceCzk: 4000, isStale: false }),
+            json: async () => ({ priceEur: 160, priceCzk: 4000, eurCzk: 25, isStale: false }),
           } as Response;
         return {
           ok: true,
@@ -201,7 +201,7 @@ describe("DashboardPage", () => {
     const primaryValue = document.querySelector(".wealth-primary");
     expect(primaryValue).toHaveTextContent("380 000 Kč");
     expect(primaryValue).not.toHaveTextContent("HODNOTA PORTFOLIA");
-    expect(primaryValue).not.toHaveTextContent("BTC a VWCE");
+    expect(primaryValue).not.toHaveTextContent("BTC a VGLA");
     expect(screen.queryByText("ALOKACE AKTIV")).not.toBeInTheDocument();
     expect(screen.getByText(/79 % portfolia/)).toBeInTheDocument();
     expect(screen.getByText(/21 % portfolia/)).toBeInTheDocument();
@@ -252,7 +252,7 @@ describe("DashboardPage", () => {
     await user.click(screen.getByRole("tab", { name: "Renta" }));
     expect(screen.getByText("VÝVOJ MĚSÍČNÍ RENTY")).toBeInTheDocument();
     const rentChart = screen.getByRole("img", {
-      name: "Graf vývoje měsíční renty z VWCE",
+      name: "Graf vývoje měsíční renty z VGLA",
     });
     vi.spyOn(rentChart.parentElement!, "getBoundingClientRect").mockReturnValue({
       left: 0,
@@ -260,7 +260,7 @@ describe("DashboardPage", () => {
     } as DOMRect);
     fireEvent.pointerMove(rentChart.parentElement!, { clientX: 0 });
     expect(screen.getByText(/Měsíční renta .*Kč/)).toBeInTheDocument();
-    expect(screen.getByText(/Hodnota VWCE .*Kč/)).toBeInTheDocument();
+    expect(screen.getByText(/Hodnota VGLA .*Kč/)).toBeInTheDocument();
     expect(screen.getByText(/při sazbě 2 % p.a./i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "1M" }));
     expect(document.querySelector(".wealth-loading")).not.toBeInTheDocument();
@@ -478,7 +478,7 @@ describe("DashboardPage", () => {
     });
     expect(within(strategyCard).getByText("PRODAT")).toBeInTheDocument();
     expect(
-      within(strategyCard).getByText(/Celkem přesunout do VWCE:/),
+      within(strategyCard).getByText(/Celkem přesunout do VGLA:/),
     ).toBeInTheDocument();
     const bitcoinCard = within(cardGrid).getByRole("button", {
       name: "Otevřít BTC účty",
@@ -490,7 +490,7 @@ describe("DashboardPage", () => {
       within(bitcoinCard).getByText(/100[  ]000[  ]Kč/),
     ).toBeInTheDocument();
     const vwceCard = within(cardGrid).getByRole("button", {
-      name: "Otevřít VWCE portfolio",
+      name: "Otevřít VGLA portfolio",
     });
     expect(within(vwceCard).getByText(/80[  ]000[  ]Kč/)).toBeInTheDocument();
     expect(within(vwceCard).getByText(/133[  ]Kč/)).toBeInTheDocument();

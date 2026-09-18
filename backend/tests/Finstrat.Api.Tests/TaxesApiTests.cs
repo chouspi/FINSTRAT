@@ -81,9 +81,9 @@ public sealed class TaxesApiTests(IdentityApiFixture fixture)
         Assert.Equal(100000m, income.GetProperty("deferredVwceCzk").GetDecimal());
 
         token = await GetAntiforgeryToken(client);
-        using var createAccount = new HttpRequestMessage(HttpMethod.Post, "/api/vwce/accounts")
+        using var createAccount = new HttpRequestMessage(HttpMethod.Post, "/api/vgla/accounts")
         {
-            Content = JsonContent.Create(new { name = $"Income VWCE {Guid.NewGuid():N}", description = (string?)null }),
+            Content = JsonContent.Create(new { name = $"Income VGLA {Guid.NewGuid():N}", description = (string?)null }),
         };
         createAccount.Headers.Add("X-CSRF-TOKEN", token);
         var accountResponse = await client.SendAsync(createAccount);
@@ -95,7 +95,7 @@ public sealed class TaxesApiTests(IdentityApiFixture fixture)
         var purchaseBody = new
         {
             shares = "0.00100000",
-            unitPriceCzk = "100.00",
+            unitPriceEur = "4.0000",
             acquiredAt = DateTimeOffset.UtcNow.ToString("O"),
             note = "Income plan",
             consumeDeferredVwce = true,
@@ -114,7 +114,7 @@ public sealed class TaxesApiTests(IdentityApiFixture fixture)
         var regularPurchase = await SendPurchase(client, vwceAccountId, token, Guid.NewGuid(), new
         {
             shares = "1.00000000",
-            unitPriceCzk = "4000.00",
+            unitPriceEur = "160.0000",
             acquiredAt = DateTimeOffset.UtcNow.ToString("O"),
             note = "Regular purchase",
         });
@@ -123,7 +123,7 @@ public sealed class TaxesApiTests(IdentityApiFixture fixture)
 
         taxes = await client.GetFromJsonAsync<JsonElement>("/api/taxes/overview");
         Assert.Equal(98000m, taxes.GetProperty("deferredVwceCzk").GetDecimal());
-        var movements = await client.GetFromJsonAsync<JsonElement>($"/api/vwce/accounts/{vwceAccountId}/movements");
+        var movements = await client.GetFromJsonAsync<JsonElement>($"/api/vgla/accounts/{vwceAccountId}/movements");
         var linkedMovement = movements.EnumerateArray().Single(item => item.GetProperty("id").GetGuid() == purchasePayload.GetProperty("id").GetGuid());
         Assert.False(linkedMovement.GetProperty("canEdit").GetBoolean());
         Assert.False(linkedMovement.GetProperty("canDelete").GetBoolean());
@@ -134,7 +134,7 @@ public sealed class TaxesApiTests(IdentityApiFixture fixture)
 
     private static Task<HttpResponseMessage> SendDeferred(HttpClient client, string token, Guid key)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/taxes/deferred-vwce") { Content = JsonContent.Create(new { note = "Waiting for time test" }) };
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/taxes/deferred-vgla") { Content = JsonContent.Create(new { note = "Waiting for time test" }) };
         request.Headers.Add("X-CSRF-TOKEN", token);
         request.Headers.Add("Idempotency-Key", key.ToString());
         return client.SendAsync(request);
@@ -142,7 +142,7 @@ public sealed class TaxesApiTests(IdentityApiFixture fixture)
 
     private static Task<HttpResponseMessage> SendPurchase(HttpClient client, Guid accountId, string token, Guid key, object body)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/vwce/accounts/{accountId}/purchases") { Content = JsonContent.Create(body) };
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/vgla/accounts/{accountId}/purchases") { Content = JsonContent.Create(body) };
         request.Headers.Add("X-CSRF-TOKEN", token);
         request.Headers.Add("Idempotency-Key", key.ToString());
         return client.SendAsync(request);

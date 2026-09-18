@@ -9,20 +9,20 @@ import { dateToIsoTimestamp, formatCzechDate, parseCzechDate, todayIsoDate } fro
 import './VwcePage.css'
 
 type VwceOverview = {
-  totals: { shares: number; costBasisCzk: number; accountCount: number; costBasisComplete: boolean; provisionalLotCount: number; rentRatePercent: number; rentPoolCzk: number }
+  totals: { shares: number; costBasisEur: number; accountCount: number; costBasisComplete: boolean; provisionalLotCount: number; rentRatePercent: number; rentPoolCzk: number }
   accounts: VwceAccount[]
   recentMovements: VwceMovement[]
 }
-type VwcePrice = { priceCzk: number; isStale: boolean }
+type VwcePrice = { priceEur: number; priceCzk: number; eurCzk: number; isStale: boolean }
 type VwceAccount = {
   id: string; name: string; description: string | null; ownerDisplayName: string
-  shares: number; costBasisCzk: number; costBasisComplete: boolean
+  shares: number; costBasisEur: number; costBasisComplete: boolean
   lotCount: number; disposalCount: number; provisionalLotCount: number; latestActivityAt: string | null
   isOwnedByCurrentUser: boolean; canManage: boolean; canShareWithDefault: boolean; isSharedWithDefault: boolean
 }
 type VwceMovement = {
   id: string; accountId: string; accountName: string; type: string; shares: number
-  unitPriceCzk: number | null; proceedsCzk: number | null; occurredAt: string; note: string | null
+  unitPriceEur: number | null; proceedsEur: number | null; occurredAt: string; note: string | null
   canEdit?: boolean; canDelete?: boolean
 }
 type VwcePayoutResult = {
@@ -37,36 +37,37 @@ const percentFormatter = new Intl.NumberFormat('cs-CZ', { signDisplay: 'always',
 export function VwcePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { dialog } = useSearch({ from: '/vwce' })
+  const { dialog } = useSearch({ from: '/vgla' })
   const [ownerMenuAccountId, setOwnerMenuAccountId] = useState<string | null>(null)
   const [accountToEdit, setAccountToEdit] = useState<VwceAccount | null>(null)
   const [accountToDelete, setAccountToDelete] = useState<VwceAccount | null>(null)
   const [purchaseAccount, setPurchaseAccount] = useState<VwceAccount | null>(null)
-  const overview = useQuery({ queryKey: ['vwce', 'overview'], queryFn: () => apiRequest<VwceOverview>('/api/vwce/overview'), retry: false })
-  const price = useQuery({ queryKey: ['market-data', 'vwce-price'], queryFn: () => apiRequest<VwcePrice>('/api/market-data/vwce-price'), retry: false })
+  const overview = useQuery({ queryKey: ['vgla', 'overview'], queryFn: () => apiRequest<VwceOverview>('/api/vgla/overview'), retry: false })
+  const price = useQuery({ queryKey: ['market-data', 'vgla-price'], queryFn: () => apiRequest<VwcePrice>('/api/market-data/vgla-price'), retry: false })
   const sharing = useMutation({
     mutationFn: async ({ accountId, shared }: { accountId: string; shared: boolean }) => {
       const token = await antiforgeryToken()
-      await apiRequest(`/api/vwce/accounts/${accountId}/default-share`, {
+      await apiRequest(`/api/vgla/accounts/${accountId}/default-share`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
         body: JSON.stringify({ shared }),
       })
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['vwce', 'overview'] })
+      await queryClient.invalidateQueries({ queryKey: ['vgla', 'overview'] })
       notifyDataChanged()
     },
   })
   if (overview.isLoading) return <section className="vwce-page"><div className="vwce-summary vwce-summary--loading">{[0, 1, 2].map((item) => <div className="vwce-skeleton" key={item} />)}</div></section>
-  if (overview.isError || !overview.data) return <section className="vwce-page vwce-state"><Landmark size={28} /><h2>VWCE data se nepodařilo načíst</h2><button type="button" onClick={() => overview.refetch()}>Zkusit znovu</button></section>
+  if (overview.isError || !overview.data) return <section className="vwce-page vwce-state"><Landmark size={28} /><h2>VGLA data se nepodařilo načíst</h2><button type="button" onClick={() => overview.refetch()}>Zkusit znovu</button></section>
 
   const data = overview.data
   const priceCzk = validPrice(price.data?.priceCzk)
-  const totals = portfolioMetrics(data.totals.shares, data.totals.costBasisCzk, priceCzk)
+  const eurCzk = validPrice(price.data?.eurCzk)
+  const totals = portfolioMetrics(data.totals.shares, data.totals.costBasisEur * (eurCzk ?? 0), priceCzk)
   const annualRent = totals.valueCzk === null ? null : totals.valueCzk * data.totals.rentRatePercent / 100
   const monthlyRent = annualRent === null ? 0 : annualRent / 12
-  const closeDialog = () => void navigate({ to: '/vwce', search: { dialog: undefined }, replace: true })
+  const closeDialog = () => void navigate({ to: '/vgla', search: { dialog: undefined }, replace: true })
   return (
     <section className="vwce-page">
       <RentControlCard
@@ -75,19 +76,20 @@ export function VwcePage() {
         rentRatePercent={data.totals.rentRatePercent}
         rentPoolCzk={data.totals.rentPoolCzk}
         canPayout={data.accounts.some((account) => account.canManage && account.shares > 0)}
-        onPayout={() => void navigate({ to: '/vwce', search: { dialog: 'payout' } })}
+          onPayout={() => void navigate({ to: '/vgla', search: { dialog: 'payout' } })}
       />
-      <div className="vwce-portfolio-strip" aria-label="VWCE portfolio">
+      <div className="vwce-portfolio-strip" aria-label="VGLA portfolio">
         <SummaryItem label="Hodnota portfolia" value={totals.valueCzk === null ? '—' : czkFormatter.format(totals.valueCzk)} note={`${sharesFormatter.format(data.totals.shares)} ks`} />
         <SummaryItem label="Zisk / ztráta" value={totals.gainCzk === null ? '—' : signedCzk(totals.gainCzk)} note={totals.gainPercent === null ? undefined : `${percentFormatter.format(totals.gainPercent)} %`} tone={gainTone(totals.gainCzk)} />
-        <SummaryItem label="Investováno" value={czkFormatter.format(data.totals.costBasisCzk)} note={data.totals.costBasisComplete ? `${data.totals.accountCount} ${data.totals.accountCount === 1 ? 'broker' : 'brokerů'}` : 'část nákupní ceny chybí'} />
+        <SummaryItem label="Investováno" value={eurCzk === null ? '—' : czkFormatter.format(data.totals.costBasisEur * eurCzk)} note={data.totals.costBasisComplete ? `${data.totals.accountCount} ${data.totals.accountCount === 1 ? 'broker' : 'brokerů'}` : 'část nákupní ceny chybí'} />
       </div>
       {data.accounts.length === 0 ? (
-        <div className="vwce-empty"><div><WalletCards size={25} /></div><h2>Žádné VWCE účty</h2><p>Aktuální identita zatím nevlastní žádný brokerský účet.</p></div>
+        <div className="vwce-empty"><div><WalletCards size={25} /></div><h2>Žádné VGLA účty</h2><p>Aktuální identita zatím nevlastní žádný brokerský účet.</p></div>
       ) : <>
         <div className="vwce-section-title">BROKEŘI</div>
         <div className="vwce-accounts">{data.accounts.map((account) => {
-          const metrics = portfolioMetrics(account.shares, account.costBasisCzk, priceCzk)
+          const accountCostBasisCzk = account.costBasisEur * (eurCzk ?? 0)
+          const metrics = portfolioMetrics(account.shares, accountCostBasisCzk, priceCzk)
           return <details className="vwce-account" key={account.id}>
             <summary>
               <div className="vwce-account-name"><h3>{account.name}</h3><p>{account.description || 'Bez popisu'}</p></div>
@@ -99,7 +101,7 @@ export function VwcePage() {
               <ChevronDown className="vwce-account-chevron" size={18} />
             </summary>
             <div className="vwce-account-detail">
-              <span>Investováno <strong>{czkFormatter.format(account.costBasisCzk)}</strong></span>
+               <span>Investováno <strong>{eurCzk === null ? '—' : czkFormatter.format(accountCostBasisCzk)}</strong></span>
               <span>{account.lotCount} nákupů · {account.disposalCount} výplat</span>
               {metrics.gainPercent !== null && <span>Výnos <strong className={gainTone(metrics.gainCzk)}>{percentFormatter.format(metrics.gainPercent)} %</strong></span>}
               {account.provisionalLotCount > 0 && <span className="vwce-provisional"><TriangleAlert size={13} /> {account.provisionalLotCount} provizorní</span>}
@@ -131,7 +133,7 @@ export function VwcePage() {
       )}
       {accountToEdit && <EditVwceAccountDialog account={accountToEdit} onClose={() => setAccountToEdit(null)} />}
       {accountToDelete && <DeleteVwceAccountDialog account={accountToDelete} onClose={() => setAccountToDelete(null)} />}
-      {purchaseAccount && <CreateVwcePurchaseDialog account={purchaseAccount} currentPriceCzk={priceCzk} onClose={() => setPurchaseAccount(null)} />}
+      {purchaseAccount && <CreateVwcePurchaseDialog account={purchaseAccount} currentPriceEur={validPrice(price.data?.priceEur)} eurCzk={eurCzk} onClose={() => setPurchaseAccount(null)} />}
     </section>
   )
 }
@@ -169,40 +171,40 @@ function dayLabel(days: number) {
   return 'dní'
 }
 
-function CreateVwcePurchaseDialog({ account, currentPriceCzk, onClose }: { account: VwceAccount; currentPriceCzk: number | null; onClose: () => void }) {
+function CreateVwcePurchaseDialog({ account, currentPriceEur, eurCzk, onClose }: { account: VwceAccount; currentPriceEur: number | null; eurCzk: number | null; onClose: () => void }) {
   const queryClient = useQueryClient()
   const idempotencyKey = useRef(createUuid())
   const [shares, setShares] = useState('')
-  const [unitPriceCzk, setUnitPriceCzk] = useState(() => currentPriceCzk === null ? '' : currentPriceCzk.toFixed(2))
+  const [unitPriceEur, setUnitPriceEur] = useState(() => currentPriceEur === null ? '' : currentPriceEur.toFixed(4))
   const [acquiredAt, setAcquiredAt] = useState(() => formatCzechDate(todayIsoDate()))
   const [note, setNote] = useState('')
-  const total = Number(shares) * Number(unitPriceCzk)
+  const totalCzk = Number(shares) * Number(unitPriceEur) * (eurCzk ?? 0)
   const mutation = useMutation({
     mutationFn: async () => {
       const parsedDate = parseCzechDate(acquiredAt)
       if (!parsedDate) throw new Error('Datum musí být ve formátu DD.MM.RRRR.')
       const token = await antiforgeryToken()
-      return apiRequest(`/api/vwce/accounts/${account.id}/purchases`, {
+      return apiRequest(`/api/vgla/accounts/${account.id}/purchases`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token, 'Idempotency-Key': idempotencyKey.current },
-        body: JSON.stringify({ shares, unitPriceCzk, acquiredAt: dateToIsoTimestamp(parsedDate), note: note || null }),
+        body: JSON.stringify({ shares, unitPriceEur, acquiredAt: dateToIsoTimestamp(parsedDate), note: note || null }),
       })
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['vwce'] })
+      await queryClient.invalidateQueries({ queryKey: ['vgla'] })
       notifyDataChanged()
       onClose()
     },
   })
-  return <VwceDialog title={`Přidat nákup · ${account.name}`} kicker="NOVÝ POHYB" onClose={onClose}><form className="vwce-form" onSubmit={(event) => { event.preventDefault(); mutation.mutate() }}><label>Počet podílů<input autoFocus inputMode="decimal" value={shares} onChange={(event) => setShares(event.target.value)} required /></label><label>Cena za podíl (Kč)<input inputMode="decimal" value={unitPriceCzk} onChange={(event) => setUnitPriceCzk(event.target.value)} required /></label>{Number.isFinite(total) && total > 0 && <div className="vwce-purchase-total"><span>Celkem</span><strong>{czkFormatter.format(total)}</strong></div>}<label>Datum nákupu<input inputMode="numeric" pattern="\d{1,2}\.\d{1,2}\.\d{4}" value={acquiredAt} onChange={(event) => setAcquiredAt(event.target.value)} required /></label><label>Poznámka <small>volitelné</small><input value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} /></label>{mutation.error && <p className="form-error" role="alert">{mutation.error.message}</p>}<div className="vwce-dialog-actions"><button type="button" onClick={onClose}>Zrušit</button><button className="vwce-primary" type="submit" disabled={mutation.isPending || !(Number(shares) > 0) || !(Number(unitPriceCzk) > 0)}><Plus size={15} /> {mutation.isPending ? 'Ukládám…' : 'Přidat nákup'}</button></div></form></VwceDialog>
+  return <VwceDialog title={`Přidat nákup · ${account.name}`} kicker="NOVÝ POHYB" onClose={onClose}><form className="vwce-form" onSubmit={(event) => { event.preventDefault(); mutation.mutate() }}><label>Počet podílů<input autoFocus inputMode="decimal" value={shares} onChange={(event) => setShares(event.target.value)} required /></label><label>Cena za podíl (EUR)<input inputMode="decimal" value={unitPriceEur} onChange={(event) => setUnitPriceEur(event.target.value)} required /></label>{Number.isFinite(totalCzk) && totalCzk > 0 && <div className="vwce-purchase-total"><span>Celkem v Kč</span><strong>{czkFormatter.format(totalCzk)}</strong></div>}<label>Datum nákupu<input inputMode="numeric" pattern="\d{1,2}\.\d{1,2}\.\d{4}" value={acquiredAt} onChange={(event) => setAcquiredAt(event.target.value)} required /></label><label>Poznámka <small>volitelné</small><input value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} /></label>{mutation.error && <p className="form-error" role="alert">{mutation.error.message}</p>}<div className="vwce-dialog-actions"><button type="button" onClick={onClose}>Zrušit</button><button className="vwce-primary" type="submit" disabled={mutation.isPending || !(Number(shares) > 0) || !(Number(unitPriceEur) > 0)}><Plus size={15} /> {mutation.isPending ? 'Ukládám…' : 'Přidat nákup'}</button></div></form></VwceDialog>
 }
 
 function VwceAccountMovements({ accountId }: { accountId: string }) {
   const [editing, setEditing] = useState<VwceMovement | null>(null)
   const [deleting, setDeleting] = useState<VwceMovement | null>(null)
   const movements = useQuery({
-    queryKey: ['vwce', 'accounts', accountId, 'movements'],
-    queryFn: () => apiRequest<VwceMovement[]>(`/api/vwce/accounts/${accountId}/movements`),
+    queryKey: ['vgla', 'accounts', accountId, 'movements'],
+    queryFn: () => apiRequest<VwceMovement[]>(`/api/vgla/accounts/${accountId}/movements`),
     retry: false,
   })
   const items = Array.isArray(movements.data) ? movements.data : []
@@ -222,16 +224,16 @@ function VwceAccountMovements({ accountId }: { accountId: string }) {
 function EditVwceMovementDialog({ movement, onClose }: { movement: VwceMovement; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [shares, setShares] = useState(String(movement.shares))
-  const [unitPriceCzk, setUnitPriceCzk] = useState(String(movement.unitPriceCzk ?? ''))
+  const [unitPriceEur, setUnitPriceEur] = useState(String(movement.unitPriceEur ?? ''))
   const [acquiredAt, setAcquiredAt] = useState(() => formatCzechDate(movement.occurredAt.slice(0, 10)))
   const [note, setNote] = useState(movement.note ?? '')
-  const mutation = useMutation({ mutationFn: async () => { const date = parseCzechDate(acquiredAt); if (!date) throw new Error('Datum musí být ve formátu DD.MM.RRRR.'); const token = await antiforgeryToken(); await apiRequest(`/api/vwce/movements/${movement.id}/purchase`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token }, body: JSON.stringify({ shares, unitPriceCzk, acquiredAt: dateToIsoTimestamp(date), note: note || null }) }) }, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['vwce'] }); notifyDataChanged(); onClose() } })
-  return <VwceDialog title="Upravit nákup" kicker="POHYB NA ÚČTU" onClose={onClose}><form className="vwce-form" onSubmit={(event) => { event.preventDefault(); mutation.mutate() }}><label>Počet podílů<input autoFocus inputMode="decimal" value={shares} onChange={(event) => setShares(event.target.value)} required /></label><label>Cena za podíl (Kč)<input inputMode="decimal" value={unitPriceCzk} onChange={(event) => setUnitPriceCzk(event.target.value)} required /></label><label>Datum nákupu<input inputMode="numeric" pattern="\d{1,2}\.\d{1,2}\.\d{4}" value={acquiredAt} onChange={(event) => setAcquiredAt(event.target.value)} required /></label><label>Poznámka <small>volitelné</small><input value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} /></label>{mutation.error && <p className="form-error" role="alert">{mutation.error.message}</p>}<div className="vwce-dialog-actions"><button type="button" onClick={onClose}>Zrušit</button><button className="vwce-primary" type="submit" disabled={mutation.isPending}><Pencil size={15} /> Uložit pohyb</button></div></form></VwceDialog>
+  const mutation = useMutation({ mutationFn: async () => { const date = parseCzechDate(acquiredAt); if (!date) throw new Error('Datum musí být ve formátu DD.MM.RRRR.'); const token = await antiforgeryToken(); await apiRequest(`/api/vgla/movements/${movement.id}/purchase`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token }, body: JSON.stringify({ shares, unitPriceEur, acquiredAt: dateToIsoTimestamp(date), note: note || null }) }) }, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['vgla'] }); notifyDataChanged(); onClose() } })
+  return <VwceDialog title="Upravit nákup" kicker="POHYB NA ÚČTU" onClose={onClose}><form className="vwce-form" onSubmit={(event) => { event.preventDefault(); mutation.mutate() }}><label>Počet podílů<input autoFocus inputMode="decimal" value={shares} onChange={(event) => setShares(event.target.value)} required /></label><label>Cena za podíl (EUR)<input inputMode="decimal" value={unitPriceEur} onChange={(event) => setUnitPriceEur(event.target.value)} required /></label><label>Datum nákupu<input inputMode="numeric" pattern="\d{1,2}\.\d{1,2}\.\d{4}" value={acquiredAt} onChange={(event) => setAcquiredAt(event.target.value)} required /></label><label>Poznámka <small>volitelné</small><input value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} /></label>{mutation.error && <p className="form-error" role="alert">{mutation.error.message}</p>}<div className="vwce-dialog-actions"><button type="button" onClick={onClose}>Zrušit</button><button className="vwce-primary" type="submit" disabled={mutation.isPending}><Pencil size={15} /> Uložit pohyb</button></div></form></VwceDialog>
 }
 
 function DeleteVwceMovementDialog({ movement, onClose }: { movement: VwceMovement; onClose: () => void }) {
   const queryClient = useQueryClient()
-  const mutation = useMutation({ mutationFn: async () => { const token = await antiforgeryToken(); await apiRequest(`/api/vwce/movements/${movement.id}/purchase`, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': token } }) }, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['vwce'] }); notifyDataChanged(); onClose() } })
+  const mutation = useMutation({ mutationFn: async () => { const token = await antiforgeryToken(); await apiRequest(`/api/vgla/movements/${movement.id}/purchase`, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': token } }) }, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['vgla'] }); notifyDataChanged(); onClose() } })
   return <VwceDialog title="Odstranit nákup" kicker="POHYB NA ÚČTU" onClose={onClose}><p className="vwce-delete-copy">Nákup bude trvale odstraněn. Tato možnost je dostupná pouze proto, že na něj nenavazuje žádný další pohyb.</p>{mutation.error && <p className="form-error" role="alert">{mutation.error.message}</p>}<div className="vwce-dialog-actions"><button type="button" onClick={onClose}>Zrušit</button><button className="vwce-delete-confirm" type="button" disabled={mutation.isPending} onClick={() => mutation.mutate()}><Trash2 size={15} /> Odstranit pohyb</button></div></VwceDialog>
 }
 
@@ -242,9 +244,9 @@ function EditVwceAccountDialog({ account, onClose }: { account: VwceAccount; onC
   const mutation = useMutation({
     mutationFn: async () => {
       const token = await antiforgeryToken()
-      await apiRequest(`/api/vwce/accounts/${account.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token }, body: JSON.stringify({ name, description: description || null }) })
+      await apiRequest(`/api/vgla/accounts/${account.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token }, body: JSON.stringify({ name, description: description || null }) })
     },
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['vwce'] }); notifyDataChanged(); onClose() },
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['vgla'] }); notifyDataChanged(); onClose() },
   })
   return <VwceDialog title="Upravit broker účet" kicker="ÚPRAVA ÚČTU" onClose={onClose}><form className="vwce-form" onSubmit={(event) => { event.preventDefault(); mutation.mutate() }}><label>Název účtu<input autoFocus value={name} maxLength={100} onChange={(event) => setName(event.target.value)} required /></label><label>Popis <small>volitelné</small><input value={description} maxLength={500} onChange={(event) => setDescription(event.target.value)} /></label>{mutation.error && <p className="form-error" role="alert">{mutation.error.message}</p>}<div className="vwce-dialog-actions"><button type="button" onClick={onClose}>Zrušit</button><button className="vwce-primary" type="submit" disabled={mutation.isPending || !name.trim()}><Pencil size={15} /> Uložit změny</button></div></form></VwceDialog>
 }
@@ -252,8 +254,8 @@ function EditVwceAccountDialog({ account, onClose }: { account: VwceAccount; onC
 function DeleteVwceAccountDialog({ account, onClose }: { account: VwceAccount; onClose: () => void }) {
   const queryClient = useQueryClient()
   const mutation = useMutation({
-    mutationFn: async () => { const token = await antiforgeryToken(); await apiRequest(`/api/vwce/accounts/${account.id}`, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': token } }) },
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['vwce'] }); notifyDataChanged(); onClose() },
+    mutationFn: async () => { const token = await antiforgeryToken(); await apiRequest(`/api/vgla/accounts/${account.id}`, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': token } }) },
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['vgla'] }); notifyDataChanged(); onClose() },
   })
   return <VwceDialog title="Odstranit broker účet" kicker="ARCHIVACE ÚČTU" onClose={onClose}><p className="vwce-delete-copy">Účet „{account.name}“ zmizí z aktivního přehledu. Historické nákupy a výplaty zůstanou uložené.</p>{mutation.error && <p className="form-error" role="alert">{mutation.error.message}</p>}<div className="vwce-dialog-actions"><button type="button" onClick={onClose}>Zrušit</button><button className="vwce-delete-confirm" type="button" disabled={mutation.isPending} onClick={() => mutation.mutate()}><Trash2 size={15} /> Odstranit účet</button></div></VwceDialog>
 }
@@ -265,14 +267,14 @@ function CreateVwceAccountDialog({ onClose }: { onClose: () => void }) {
   const mutation = useMutation({
     mutationFn: async () => {
       const token = await antiforgeryToken()
-      await apiRequest('/api/vwce/accounts', {
+      await apiRequest('/api/vgla/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
         body: JSON.stringify({ name, description: description || null }),
       })
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['vwce', 'overview'] })
+      await queryClient.invalidateQueries({ queryKey: ['vgla', 'overview'] })
       notifyDataChanged()
       onClose()
     },
@@ -314,7 +316,7 @@ function VwcePayoutDialog({ accounts, monthlyRent, rentRatePercent, rentPoolCzk,
       const payoutDate = parseCzechDate(paidAt)
       if (!payoutDate) throw new Error('Datum musí být ve formátu DD.MM.RRRR.')
       const token = await antiforgeryToken()
-      return apiRequest<VwcePayoutResult>('/api/vwce/payouts', {
+      return apiRequest<VwcePayoutResult>('/api/vgla/payouts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -325,7 +327,7 @@ function VwcePayoutDialog({ accounts, monthlyRent, rentRatePercent, rentPoolCzk,
       })
     },
     onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: ['vwce', 'overview'] })
+      await queryClient.invalidateQueries({ queryKey: ['vgla', 'overview'] })
       notifyDataChanged()
       if (!result.deferred) onClose()
     },

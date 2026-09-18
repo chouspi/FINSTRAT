@@ -7,7 +7,7 @@ public sealed record VwceOverviewResponse(
 
 public sealed record VwceTotalsResponse(
     decimal Shares,
-    decimal CostBasisCzk,
+    decimal CostBasisEur,
     int AccountCount,
     bool CostBasisComplete,
     int ProvisionalLotCount,
@@ -20,7 +20,7 @@ public sealed record VwceAccountResponse(
     string? Description,
     string OwnerDisplayName,
     decimal Shares,
-    decimal CostBasisCzk,
+    decimal CostBasisEur,
     bool CostBasisComplete,
     int LotCount,
     int DisposalCount,
@@ -37,8 +37,8 @@ public sealed record VwceMovementResponse(
     string AccountName,
     string Type,
     decimal Shares,
-    decimal? UnitPriceCzk,
-    decimal? ProceedsCzk,
+    decimal? UnitPriceEur,
+    decimal? ProceedsEur,
     DateTime OccurredAt,
     string? Note,
     bool CanEdit,
@@ -46,12 +46,12 @@ public sealed record VwceMovementResponse(
 
 public sealed record UpdateVwcePurchaseMovementRequest(
     string Shares,
-    string UnitPriceCzk,
+    string UnitPriceEur,
     string AcquiredAt,
     string? Note);
 public sealed record CreateVwcePurchaseRequest(
     string Shares,
-    string UnitPriceCzk,
+    string UnitPriceEur,
     string AcquiredAt,
     string? Note,
     bool ConsumeDeferredVwce = false,
@@ -60,7 +60,7 @@ public sealed record CreateVwcePurchaseResponse(
     Guid Id,
     Guid AccountId,
     decimal Shares,
-    decimal UnitPriceCzk,
+    decimal UnitPriceEur,
     DateTime AcquiredAt,
     string? Note,
     decimal DeferredVwceConsumedCzk = 0,
@@ -84,7 +84,7 @@ public sealed record CreateVwcePayoutResponse(
     decimal RequestedAmountCzk,
     decimal AmountCzk,
     decimal Shares,
-    decimal UnitPriceCzk,
+    decimal UnitPriceEur,
     DateTime PaidAt,
     string Note,
     bool Deferred,

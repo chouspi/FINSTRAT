@@ -9,7 +9,7 @@ public static class VwceEndpoints
 {
     public static IEndpointRouteBuilder MapVwceEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/vwce").WithTags("VWCE").RequireAuthorization();
+        var group = endpoints.MapGroup("/api/vgla").WithTags("VGLA").RequireAuthorization();
 
         group.MapGet("/overview", async (
             ClaimsPrincipal principal,
@@ -48,7 +48,7 @@ public static class VwceEndpoints
                 var (householdId, userId) = CurrentContext(principal, userManager);
                 var response = await commandService.CreateAccountAsync(
                     householdId, userId, request, cancellationToken);
-                return Results.Created($"/api/vwce/accounts/{response.Id}", response);
+                return Results.Created($"/api/vgla/accounts/{response.Id}", response);
             }
             catch (VwceValidationException exception)
             {
@@ -132,7 +132,7 @@ public static class VwceEndpoints
                 var (householdId, userId) = CurrentContext(principal, userManager);
                 var response = await commandService.CreatePurchaseAsync(
                     householdId, userId, accountId, idempotencyKey, request, cancellationToken);
-                return Results.Created($"/api/vwce/movements/{response.Id}", response);
+                return Results.Created($"/api/vgla/movements/{response.Id}", response);
             }
             catch (VwceValidationException exception)
             {
@@ -180,7 +180,7 @@ public static class VwceEndpoints
                 var (householdId, userId) = CurrentContext(principal, userManager);
                 var response = await commandService.CreatePayoutAsync(
                     householdId, userId, idempotencyKey, request, cancellationToken);
-                return Results.Created(response.Id is null ? "/api/vwce/overview" : $"/api/vwce/payouts/{response.Id}", response);
+                return Results.Created(response.Id is null ? "/api/vgla/overview" : $"/api/vgla/payouts/{response.Id}", response);
             }
             catch (VwceValidationException exception)
             {

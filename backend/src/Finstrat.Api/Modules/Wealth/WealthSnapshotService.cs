@@ -25,6 +25,7 @@ public sealed class WealthSnapshotService(
             ? await vwcePriceService.GetAsync(cancellationToken) : null;
         var btcValue = decimal.Round(holdings.BtcQuantity * (btcPrice?.PriceCzk ?? 0), 2);
         var vwceValue = decimal.Round(holdings.VwceShares * (vwcePrice?.PriceCzk ?? 0), 2);
+        var vglaCostBasisCzk = decimal.Round(holdings.VwceCostBasis * (vwcePrice?.EurCzk ?? 0), 2);
         var grossAssets = btcValue + vwceValue;
         var trackedNetWorth = grossAssets - holdings.ConsumerDebt;
         var quality = btcPrice?.IsStale == true || vwcePrice?.IsStale == true ? "estimated" : "complete";
@@ -34,10 +35,10 @@ public sealed class WealthSnapshotService(
         try
         {
             Guid? btcPriceId = btcPrice is null ? null : await PersistPriceAsync(
-                connection, transaction, "BTC", btcPrice.PriceCzk, btcPrice.ObservedAt,
+                connection, transaction, "BTC", "CZK", btcPrice.PriceCzk, btcPrice.ObservedAt,
                 btcPrice.Source, cancellationToken);
             Guid? vwcePriceId = vwcePrice is null ? null : await PersistPriceAsync(
-                connection, transaction, "VWCE", vwcePrice.PriceCzk, vwcePrice.ObservedAt,
+                connection, transaction, "VGLA", "EUR", vwcePrice.PriceEur, vwcePrice.ObservedAt,
                 vwcePrice.Source, cancellationToken);
             await using var command = new NpgsqlCommand("""
                 INSERT INTO wealth_snapshots (
@@ -80,7 +81,7 @@ public sealed class WealthSnapshotService(
             command.Parameters.AddWithValue("vwce_shares", holdings.VwceShares);
             command.Parameters.AddWithValue("vwce_price", NpgsqlDbType.Numeric, (object?)vwcePrice?.PriceCzk ?? DBNull.Value);
             command.Parameters.AddWithValue("vwce_value", vwceValue);
-            command.Parameters.AddWithValue("vwce_basis", holdings.VwceCostBasis);
+            command.Parameters.AddWithValue("vwce_basis", vglaCostBasisCzk);
             command.Parameters.AddWithValue("consumer_debt", holdings.ConsumerDebt);
             command.Parameters.AddWithValue("mortgage_debt", holdings.MortgageDebt);
             command.Parameters.AddWithValue("gross_assets", grossAssets);
@@ -185,7 +186,7 @@ public sealed class WealthSnapshotService(
               GROUP BY lot.id
             ), vwce_remaining AS (
               SELECT GREATEST(lot.shares - COALESCE(SUM(allocation.shares), 0), 0) shares,
-                lot.unit_price_czk
+                lot.unit_price_eur
               FROM vwce_lots lot
               JOIN vwce_accounts account ON account.household_id = lot.household_id AND account.id = lot.account_id
               LEFT JOIN vwce_lot_allocations allocation ON allocation.household_id = lot.household_id AND allocation.lot_id = lot.id
@@ -204,7 +205,7 @@ public sealed class WealthSnapshotService(
             SELECT COALESCE((SELECT SUM(quantity) FROM btc_remaining), 0),
               COALESCE((SELECT SUM(quantity * unit_price_czk) FROM btc_remaining WHERE unit_price_czk IS NOT NULL), 0),
               COALESCE((SELECT SUM(shares) FROM vwce_remaining), 0),
-              COALESCE((SELECT SUM(shares * unit_price_czk) FROM vwce_remaining WHERE unit_price_czk IS NOT NULL), 0),
+              COALESCE((SELECT SUM(shares * unit_price_eur) FROM vwce_remaining WHERE unit_price_eur IS NOT NULL), 0),
               consumer, mortgage FROM debt_totals
             """, connection);
         command.Parameters.AddWithValue("household_id", householdId);
@@ -218,22 +219,23 @@ public sealed class WealthSnapshotService(
 
     private static async Task<Guid> PersistPriceAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, string instrument,
-        decimal price, DateTimeOffset observedAt, string source, CancellationToken cancellationToken)
+        string quoteCurrency, decimal price, DateTimeOffset observedAt, string source, CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("""
             WITH inserted AS (
               INSERT INTO market_prices (instrument, quote_currency, price, observed_at, source)
-              VALUES (@instrument, 'CZK', @price, @observed_at, @source)
+              VALUES (@instrument, @quote_currency, @price, @observed_at, @source)
               ON CONFLICT (instrument, quote_currency, observed_at, source) DO NOTHING
               RETURNING id
             )
             SELECT id FROM inserted
             UNION ALL
-            SELECT id FROM market_prices WHERE instrument = @instrument AND quote_currency = 'CZK'
+            SELECT id FROM market_prices WHERE instrument = @instrument AND quote_currency = @quote_currency
               AND observed_at = @observed_at AND source = @source
             LIMIT 1
             """, connection, transaction);
         command.Parameters.AddWithValue("instrument", instrument);
+        command.Parameters.AddWithValue("quote_currency", quoteCurrency);
         command.Parameters.AddWithValue("price", price);
         command.Parameters.AddWithValue("observed_at", observedAt);
         command.Parameters.AddWithValue("source", source);

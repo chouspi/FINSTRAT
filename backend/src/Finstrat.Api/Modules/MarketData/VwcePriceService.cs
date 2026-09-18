@@ -19,8 +19,8 @@ public sealed class VwcePriceService(IHttpClientFactory httpClientFactory)
 
             try
             {
-                var client = httpClientFactory.CreateClient("vwce-price");
-                var vwceTask = client.GetAsync("v8/finance/chart/VWCE.AS?interval=1d&range=1d", cancellationToken);
+                var client = httpClientFactory.CreateClient("vgla-price");
+                var vwceTask = client.GetAsync("v8/finance/chart/VGLA.DE?interval=1d&range=1d", cancellationToken);
                 var fxTask = client.GetAsync("v8/finance/chart/EURCZK=X?interval=1d&range=1d", cancellationToken);
                 await Task.WhenAll(vwceTask, fxTask);
                 using var vwceResponse = await vwceTask;
@@ -31,11 +31,12 @@ public sealed class VwcePriceService(IHttpClientFactory httpClientFactory)
                 var priceEur = await ReadMarketPriceAsync(vwceResponse, cancellationToken);
                 var eurCzk = await ReadMarketPriceAsync(fxResponse, cancellationToken);
                 if (priceEur <= 0 || eurCzk <= 0)
-                    throw new InvalidOperationException("Price provider returned an invalid VWCE price.");
+                    throw new InvalidOperationException("Price provider returned an invalid VGLA price.");
 
                 _lastKnown = new VwcePrice(
                     priceEur,
                     decimal.Round(priceEur * eurCzk, 4),
+                    eurCzk,
                     DateTimeOffset.UtcNow,
                     "yahoo-finance",
                     false);
@@ -76,6 +77,7 @@ public sealed class VwcePriceService(IHttpClientFactory httpClientFactory)
 public sealed record VwcePrice(
     decimal PriceEur,
     decimal PriceCzk,
+    decimal EurCzk,
     DateTimeOffset ObservedAt,
     string Source,
     bool IsStale);
