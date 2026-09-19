@@ -26,7 +26,7 @@ const TIMEFRAMES: { key: Timeframe; label: string; days: number }[] = [
 ]
 
 const czk = new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })
-const compactCzk = new Intl.NumberFormat('cs-CZ', { notation: 'compact', style: 'currency', currency: 'CZK', maximumFractionDigits: 1 })
+const compactCzk = new Intl.NumberFormat('cs-CZ', { notation: 'compact', style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })
 const chartDate = new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'short', year: 'numeric' })
 
 export function DashboardPage() {
@@ -55,7 +55,7 @@ export function DashboardPage() {
         <div className="dashboard-panel-header">
           <div className="dashboard-heading-copy">
             <span className="dashboard-heading-icon"><TrendingUp size={19} /></span>
-            <div><h2 id="dashboard-chart-title">Čisté jmění</h2><p>Aktiva po odečtení spotřebitelských dluhů</p></div>
+            <div><h2 id="dashboard-chart-title">Čisté jmění</h2></div>
           </div>
           <button className="dashboard-wealth-link" type="button" onClick={() => void navigate({ to: '/wealth', search: { tab: 'net' } })}>Detail <ChevronRight size={14} /></button>
         </div>
@@ -100,14 +100,18 @@ function DashboardChart({ history, loading, fetching, error, onRetry }: { histor
   const times = points.map((point) => Date.parse(`${point.date}T00:00:00Z`))
   const values = points.map((point) => point.value)
   const rawMin = Math.min(...values), rawMax = Math.max(...values)
-  const valueSpread = Math.max(rawMax - rawMin, Math.abs(rawMax) * .08, 1)
-  const min = rawMin - valueSpread * .14, max = rawMax + valueSpread * .14
+  const rawRange = rawMax - rawMin
+  const tickStep = niceTickStep(rawRange > 0 ? rawRange / 4 : Math.max(Math.abs(rawMax) * .1, 1000))
+  let min = Math.floor(rawMin / tickStep) * tickStep
+  let max = Math.ceil(rawMax / tickStep) * tickStep
+  if (min === rawMin) min -= tickStep
+  if (max === rawMax) max += tickStep
   const minTime = Math.min(...times), maxTime = Math.max(...times)
   const x = (date: string) => points.length === 1 ? width / 2 : pad.left + (Date.parse(`${date}T00:00:00Z`) - minTime) / Math.max(1, maxTime - minTime) * (width - pad.left - pad.right)
   const y = (value: number) => height - pad.bottom - (value - min) / (max - min) * (height - pad.top - pad.bottom)
   const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${x(point.date)} ${y(point.value)}`).join(' ')
   const areaPath = points.length > 1 ? `${linePath} L ${x(points.at(-1)!.date)} ${height - pad.bottom} L ${x(points[0].date)} ${height - pad.bottom} Z` : ''
-  const tickValues = Array.from({ length: 4 }, (_, index) => min + (max - min) * index / 3).reverse()
+  const tickValues = Array.from({ length: Math.round((max - min) / tickStep) + 1 }, (_, index) => max - index * tickStep)
   const dateTickCount = Math.min(5, points.length)
   const dateIndexes = [...new Set(Array.from({ length: dateTickCount }, (_, index) => Math.round(index * (points.length - 1) / Math.max(1, dateTickCount - 1))))]
   const change = points.at(-1)!.value - points[0].value
@@ -184,6 +188,13 @@ function RentCard({ overview, price, loading, error, onClick }: { overview?: Vgl
 
 function validDate(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`))
+}
+
+function niceTickStep(value: number) {
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(value, 1)))
+  const normalized = value / magnitude
+  const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
+  return multiplier * magnitude
 }
 
 function normalizePoints(value: WealthPoint[] | undefined) {

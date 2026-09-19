@@ -347,7 +347,7 @@ describe("DashboardPage", () => {
     expect(document.querySelector(".dashboard-chart-summary")).toHaveClass("negative");
     expect(screen.getByText("za poslední měsíc")).toBeInTheDocument();
     const chart = await screen.findByRole("img", { name: "Vývoj čistého jmění" });
-    expect(chart.querySelectorAll(".dashboard-grid-line")).toHaveLength(4);
+    expect(chart.querySelectorAll(".dashboard-grid-line").length).toBeGreaterThanOrEqual(3);
     expect(document.querySelector(".dashboard-chart-visual")).toHaveClass("negative");
     const chartFrame = screen.getByRole("group", { name: /Graf čistého jmění/ });
     const chartPlot = document.querySelector(".dashboard-chart-plot")!;
