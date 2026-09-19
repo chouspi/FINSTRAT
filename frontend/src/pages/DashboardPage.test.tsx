@@ -328,71 +328,7 @@ describe("DashboardPage", () => {
     expect(screen.getByText(/Odhad dluhu na konci období/)).toBeInTheDocument();
   });
 
-  it("alerts about due scheduled payments and opens Debts after confirmation", async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.endsWith("/debts/overview"))
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            totals: {
-              activeBalanceCzk: 10000,
-              repayableBalanceCzk: 10000,
-              mortgageBalanceCzk: 0,
-              activeCount: 1,
-              closedCount: 0,
-            },
-            debts: [
-              {
-                id: "loan",
-                name: "Půjčka",
-                priority: 5,
-                isMortgage: false,
-                openedAt: "2026-01-01",
-                closedAt: null,
-                note: null,
-                balanceCzk: 10000,
-                scheduledPaymentCzk: 5000,
-                entryCount: 2,
-                latestActivityAt: "2026-08-25",
-              },
-            ],
-            recentEntries: [],
-            scheduledPayments: [
-              {
-                id: "due",
-                debtId: "loan",
-                debtName: "Půjčka",
-                type: "scheduled_payment",
-                amountCzk: 5000,
-                effectiveAt: "2026-08-25",
-                isScheduled: true,
-                isDue: true,
-                note: null,
-              },
-            ],
-          }),
-        } as Response;
-      if (url.endsWith("/btc-price"))
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ priceUsd: 75000, change24hPercent: 1 }),
-        } as Response;
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({
-          id: "default",
-          userName: "default",
-          displayName: "Default",
-          isDefault: true,
-          householdId: "household",
-          role: "owner",
-        }),
-      } as Response;
-    });
+  it("switches between the fixed net-worth and trend charts", async () => {
     const user = userEvent.setup();
     const router = createTestRouter("/");
     await router.load();
@@ -406,19 +342,18 @@ describe("DashboardPage", () => {
       </QueryClientProvider>,
     );
 
-    expect(
-      await screen.findByRole("dialog", { name: "Je čas potvrdit splátky" }),
-    ).toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "OK, přejít na Dluhy" }),
-    );
-    await waitFor(() => expect(router.state.location.pathname).toBe("/debts"));
-    expect(
-      await screen.findByRole("heading", { name: "Dluhy" }),
-    ).toBeInTheDocument();
+    const netTab = await screen.findByRole("tab", { name: "Čisté jmění" });
+    expect(netTab).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("img", { name: "Vývoj čistého jmění" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "1M" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Trend" }));
+    expect(screen.getByRole("tab", { name: "Trend" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("img", { name: "Historie a základní trend čistého jmění" })).toBeInTheDocument();
+    expect(screen.getByText("Základní scénář za 12 měsíců")).toBeInTheDocument();
   });
 
-  it("renders the legacy net-worth strip and opens the matching wealth tab", async () => {
+  it("renders only the strategy and VGLA rent cards and links to their details", async () => {
     const user = userEvent.setup();
     const router = createTestRouter("/");
     await router.load();
@@ -432,74 +367,15 @@ describe("DashboardPage", () => {
       </QueryClientProvider>,
     );
 
-    const widget = await screen.findByRole("button", {
-      name: "Otevřít tab Čisté jmění",
-    });
-    expect(within(widget).getByText("Čisté jmění")).toBeInTheDocument();
-    expect(
-      await within(widget).findByRole("img", {
-        name: "Vývoj čistého jmění za 30 dní",
-      }),
-    ).toBeInTheDocument();
-    await user.click(widget);
-    await waitFor(() => expect(router.state.location.pathname).toBe("/wealth"));
-    expect(router.state.location.search).toMatchObject({ tab: "net" });
-    expect(
-      await screen.findByRole("tab", { name: "Čisté jmění" }),
-    ).toHaveAttribute("aria-selected", "true");
-  });
+    const strategyCard = await screen.findByRole("button", { name: /BTC strategie/ });
+    expect(await within(strategyCard).findByText("PRODAT")).toBeInTheDocument();
+    expect(within(strategyCard).getByText(/Připraveno k přesunu do VGLA/)).toBeInTheDocument();
+    const rentCard = screen.getByRole("button", { name: /VGLA renta/ });
+    expect(within(rentCard).getByText("Měsíční renta")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Income plán/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /BTC účty/ })).not.toBeInTheDocument();
 
-  it("renders all four live legacy dashboard cards", async () => {
-    const user = userEvent.setup();
-    const router = createTestRouter("/");
-    await router.load();
-    render(
-      <QueryClientProvider
-        client={
-          new QueryClient({ defaultOptions: { queries: { retry: false } } })
-        }
-      >
-        <RouterProvider router={router} />
-      </QueryClientProvider>,
-    );
-
-    const incomeCard = await screen.findByRole("button", {
-      name: "Otevřít Income plán",
-    });
-    const cardGrid = incomeCard.parentElement!;
-    expect(await within(incomeCard).findByText("70 %")).toBeInTheDocument();
-    expect(within(incomeCard).getByText("20 %")).toBeInTheDocument();
-    expect(within(incomeCard).getByText("10 %")).toBeInTheDocument();
-    expect(
-      within(incomeCard).getByText(/Plánované splátky: 5[  ]000[  ]Kč/),
-    ).toBeInTheDocument();
-    const strategyCard = within(cardGrid).getByRole("button", {
-      name: "Otevřít BTC strategii",
-    });
-    expect(within(strategyCard).getByText("PRODAT")).toBeInTheDocument();
-    expect(
-      within(strategyCard).getByText(/Celkem přesunout do VGLA:/),
-    ).toBeInTheDocument();
-    const bitcoinCard = within(cardGrid).getByRole("button", {
-      name: "Otevřít BTC účty",
-    });
-    expect(
-      within(bitcoinCard).getByText(/300[  ]000[  ]Kč/),
-    ).toBeInTheDocument();
-    expect(
-      within(bitcoinCard).getByText(/100[  ]000[  ]Kč/),
-    ).toBeInTheDocument();
-    const vwceCard = within(cardGrid).getByRole("button", {
-      name: "Otevřít VGLA portfolio",
-    });
-    expect(within(vwceCard).getByText(/80[  ]000[  ]Kč/)).toBeInTheDocument();
-    expect(within(vwceCard).getByText(/133[  ]Kč/)).toBeInTheDocument();
-    expect(
-      within(cardGrid).queryByText("Připravujeme"),
-    ).not.toBeInTheDocument();
-    await user.click(incomeCard);
-    await waitFor(() =>
-      expect(router.state.location.pathname).toBe("/income-plan"),
-    );
+    await user.click(strategyCard);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/strategy"));
   });
 });

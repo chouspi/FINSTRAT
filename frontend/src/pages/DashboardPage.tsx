@@ -1,178 +1,151 @@
+import { useId, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Banknote, ChevronRight } from 'lucide-react'
+import { ChevronRight, CircleGauge, PiggyBank } from 'lucide-react'
 import { apiRequest } from '../lib/api'
 import type { StrategyOverview } from '../lib/strategy'
+import { calculateWealthTrend, type WealthTrend, type WealthTrendInput } from '../lib/wealthTrend'
 import './DashboardPage.css'
 
-type ScheduledPayment = { id: string; amountCzk: number; isDue: boolean }
-type DebtOverview = { scheduledPayments?: ScheduledPayment[] }
-type WealthPoint = {
-  date: string
+type WealthPoint = WealthTrendInput & {
+  snapshotAt: string
   btcValueCzk: number
   vwceValueCzk: number
-  consumerDebtCzk: number
-  trackedNetWorthCzk: number
+  mortgageDebtCzk: number
 }
 type WealthHistory = { current: WealthPoint | null; points: WealthPoint[] }
-type IncomeOverview = {
-  settings: {
-    defaultCapitalCzk: number
-    withoutDebtBtcPercent: number
-    withoutDebtCashPercent: number
-    withDebtBtcPercent: number
-    withDebtDebtPercent: number
-    withDebtCashPercent: number
-  }
-  debts: { id: string; name: string; balanceCzk: number }[]
-  scheduledDebtPaymentCzk?: number
-}
-type BitcoinOverview = {
-  totals: { quantityBtc: number; costBasisCzk: number; accountCount: number; costBasisComplete: boolean }
-  accounts: { id: string; name: string; quantityBtc: number; costBasisCzk: number }[]
-}
-type BtcPrice = { priceCzk: number }
-type VwceOverview = {
-  totals: { shares: number; costBasisEur: number; accountCount: number; costBasisComplete: boolean; rentRatePercent: number }
-}
-type VwcePrice = { priceCzk: number; eurCzk: number }
+type DebtOverview = { scheduledPayments?: { effectiveAt: string; amountCzk: number; isScheduled: boolean }[] }
+type VglaOverview = { totals: { shares: number; rentRatePercent: number; rentPoolCzk: number } }
+type VglaPrice = { priceCzk: number; isStale: boolean }
+type ChartView = 'net' | 'trend'
 
 const czk = new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })
+const compactCzk = new Intl.NumberFormat('cs-CZ', { notation: 'compact', style: 'currency', currency: 'CZK', maximumFractionDigits: 1 })
+const shortDate = new Intl.DateTimeFormat('cs-CZ', { month: 'short', year: 'numeric' })
 
 export function DashboardPage() {
   const navigate = useNavigate()
-  const overview = useQuery({ queryKey: ['debts', 'overview'], queryFn: () => apiRequest<DebtOverview>('/api/debts/overview'), retry: false })
-  const wealth = useQuery({ queryKey: ['wealth', 'history', 30], queryFn: () => apiRequest<WealthHistory>('/api/wealth/history?days=30'), retry: false })
-  const income = useQuery({ queryKey: ['income-plan', 'overview'], queryFn: () => apiRequest<IncomeOverview>('/api/income-plan/overview'), retry: false })
+  const [chartView, setChartView] = useState<ChartView>('net')
+  const wealth = useQuery({ queryKey: ['wealth', 'history', 3650], queryFn: () => apiRequest<WealthHistory>('/api/wealth/history?days=3650'), retry: false })
+  const debts = useQuery({ queryKey: ['debts', 'overview'], queryFn: () => apiRequest<DebtOverview>('/api/debts/overview'), retry: false })
   const strategy = useQuery({ queryKey: ['strategy', 'overview'], queryFn: () => apiRequest<StrategyOverview>('/api/strategy/overview'), retry: false })
-  const bitcoin = useQuery({ queryKey: ['bitcoin', 'overview'], queryFn: () => apiRequest<BitcoinOverview>('/api/bitcoin/overview'), retry: false })
-  const btcPrice = useQuery({ queryKey: ['market-data', 'btc-price'], queryFn: () => apiRequest<BtcPrice>('/api/market-data/btc-price'), retry: false })
-  const vwce = useQuery({ queryKey: ['vgla', 'overview'], queryFn: () => apiRequest<VwceOverview>('/api/vgla/overview'), retry: false })
-  const vwcePrice = useQuery({ queryKey: ['market-data', 'vgla-price'], queryFn: () => apiRequest<VwcePrice>('/api/market-data/vgla-price'), retry: false })
-  const due = (overview.data?.scheduledPayments ?? []).filter((payment) => payment.isDue)
-  const amount = due.reduce((sum, payment) => sum + payment.amountCzk, 0)
-  const points = Array.isArray(wealth.data?.points) ? wealth.data.points : []
-  const current = wealth.data?.current && Number.isFinite(wealth.data.current.trackedNetWorthCzk)
-    ? wealth.data.current
-    : points.at(-1) ?? null
+  const vgla = useQuery({ queryKey: ['vgla', 'overview'], queryFn: () => apiRequest<VglaOverview>('/api/vgla/overview'), retry: false })
+  const vglaPrice = useQuery({ queryKey: ['market-data', 'vgla-price'], queryFn: () => apiRequest<VglaPrice>('/api/market-data/vgla-price'), retry: false })
+  const points = normalizePoints(wealth.data?.points)
+  const current = points.at(-1) ?? null
+  const scheduledPayments = (debts.data?.scheduledPayments ?? []).filter((payment) => payment.isScheduled)
+  const trend = calculateWealthTrend(points, 1, scheduledPayments)
+
   return <section className="dashboard-page">
-    <button className="dashboard-net-worth" type="button" aria-label="Otevřít tab Čisté jmění" onClick={() => void navigate({ to: '/wealth', search: { tab: 'net' } })}>
-      <div className="dashboard-net-worth-copy">
-        <div className="dashboard-widget-title"><span>Čisté jmění</span><ChevronRight size={13} /></div>
-        <strong className={(current?.trackedNetWorthCzk ?? 0) < 0 ? 'negative' : undefined}>{current ? czk.format(current.trackedNetWorthCzk) : '—'}</strong>
-        <p>Sledovaná aktiva − dluhy, bez hotovosti</p>
-        <div className="dashboard-net-worth-breakdown">
-          <DashboardMetric label="BTC" value={current?.btcValueCzk} tone="btc" />
-          <DashboardMetric label="VGLA" value={current?.vwceValueCzk} />
-          {(current?.consumerDebtCzk ?? 0) > 0 && <DashboardMetric label="Dluhy" value={-(current?.consumerDebtCzk ?? 0)} tone="debt" />}
+    <section className="dashboard-chart-panel" aria-labelledby="dashboard-chart-title">
+      <div className="dashboard-panel-header">
+        <div className="dashboard-chart-tabs" role="tablist" aria-label="Graf dashboardu">
+          <button type="button" role="tab" aria-selected={chartView === 'net'} className={chartView === 'net' ? 'active' : undefined} onClick={() => setChartView('net')}>Čisté jmění</button>
+          <button type="button" role="tab" aria-selected={chartView === 'trend'} className={chartView === 'trend' ? 'active' : undefined} onClick={() => setChartView('trend')}>Trend</button>
         </div>
+        <button className="dashboard-wealth-link" type="button" onClick={() => void navigate({ to: '/wealth', search: { tab: chartView === 'net' ? 'net' : 'trend' } })}>Detail <ChevronRight size={14} /></button>
       </div>
-      <div className="dashboard-net-worth-chart"><DashboardNetWorthChart points={points} /></div>
-    </button>
-    <div className="dashboard-card-grid">
-      <IncomePlanCard data={income.data} onClick={() => void navigate({ to: '/income-plan', search: { dialog: undefined } })} />
-      <StrategyCard data={strategy.data} onClick={() => void navigate({ to: '/strategy' })} />
-      <BitcoinAccountsCard data={bitcoin.data} priceCzk={btcPrice.data?.priceCzk} onClick={() => void navigate({ to: '/bitcoin', search: { dialog: undefined } })} />
-      <VwcePortfolioCard data={vwce.data} priceCzk={vwcePrice.data?.priceCzk} eurCzk={vwcePrice.data?.eurCzk} onClick={() => void navigate({ to: '/vgla', search: { dialog: undefined } })} />
+      {chartView === 'net'
+        ? <NetWorthView points={points} current={current} loading={wealth.isPending} error={wealth.isError} />
+        : <TrendView trend={trend} loading={wealth.isPending} error={wealth.isError} />}
+    </section>
+    <div className="dashboard-focus-grid">
+      <StrategyCard data={strategy.data} loading={strategy.isPending} error={strategy.isError} onClick={() => void navigate({ to: '/strategy' })} />
+      <RentCard overview={vgla.data} price={vglaPrice.data} loading={vgla.isPending || vglaPrice.isPending} error={vgla.isError || vglaPrice.isError} onClick={() => void navigate({ to: '/vgla', search: { dialog: undefined } })} />
     </div>
-    {due.length > 0 && <div className="dashboard-due-backdrop"><section className="dashboard-due-dialog" role="dialog" aria-modal="true" aria-labelledby="dashboard-due-title"><div><Banknote size={19} /></div><span>PLÁNOVANÉ SPLÁTKY</span><h2 id="dashboard-due-title">Je čas potvrdit splátky</h2><p>{due.length === 1 ? 'Jedna plánovaná splátka dosáhla data splatnosti.' : `${due.length} plánované splátky dosáhly data splatnosti.`} Celkem {czk.format(amount)}.</p><button type="button" onClick={() => void navigate({ to: '/debts', search: { dialog: undefined } })}>OK, přejít na Dluhy</button></section></div>}
   </section>
 }
 
-function BitcoinAccountsCard({ data, priceCzk, onClick }: { data?: BitcoinOverview; priceCzk?: number; onClick: () => void }) {
-  const price = typeof priceCzk === 'number' && Number.isFinite(priceCzk) && priceCzk > 0 ? priceCzk : null
-  const costBasis = typeof data?.totals?.costBasisCzk === 'number' ? data.totals.costBasisCzk : null
-  const quantity = typeof data?.totals?.quantityBtc === 'number' ? data.totals.quantityBtc : null
-  const value = price !== null && quantity !== null ? quantity * price : null
-  const gain = value !== null && costBasis !== null ? value - costBasis : null
-  return <button className="dashboard-card dashboard-asset-card dashboard-btc-accounts-card" type="button" aria-label="Otevřít BTC účty" onClick={onClick}>
-    <DashboardCardHeader title="BTC Účty" />
-    <div className="dashboard-asset-main"><span>Hodnota BTC</span><strong>{value === null ? '—' : czk.format(value)}</strong><small>{quantity === null ? 'Načítám…' : `${quantity.toFixed(6)} BTC`}</small></div>
-    <div className="dashboard-asset-footer"><DashboardSmallMetric label="Investováno" value={costBasis === null ? '—' : czk.format(costBasis)} /><DashboardSmallMetric label="Zisk / Ztráta" value={gain === null ? '—' : czk.format(gain)} tone={gain === null ? undefined : gain >= 0 ? 'positive' : 'negative'} /></div>
+function NetWorthView({ points, current, loading, error }: { points: WealthPoint[]; current: WealthPoint | null; loading: boolean; error: boolean }) {
+  const first = points[0]
+  const change = current && first ? current.trackedNetWorthCzk! - first.trackedNetWorthCzk! : null
+  return <div className="dashboard-chart-content">
+    <div className="dashboard-chart-copy">
+      <span id="dashboard-chart-title">Čisté jmění</span>
+      <strong className={(current?.trackedNetWorthCzk ?? 0) < 0 ? 'negative' : undefined}>{current ? czk.format(current.trackedNetWorthCzk!) : '—'}</strong>
+      <small>{change === null ? 'Historie zatím není dostupná' : `${change >= 0 ? '+' : ''}${czk.format(change)} za celé sledované období`}</small>
+      <p>Aktiva minus spotřebitelské dluhy. Hypotéka se do této metriky nezapočítává.</p>
+    </div>
+    <DashboardChart history={points.map((point) => ({ date: point.date, value: point.trackedNetWorthCzk! }))} ariaLabel="Vývoj čistého jmění" loading={loading} error={error} />
+  </div>
+}
+
+function TrendView({ trend, loading, error }: { trend: WealthTrend | null; loading: boolean; error: boolean }) {
+  const projected = trend?.projection.at(-1)
+  return <div className="dashboard-chart-content">
+    <div className="dashboard-chart-copy">
+      <span id="dashboard-chart-title">Základní scénář za 12 měsíců</span>
+      <strong>{projected ? czk.format(projected.netWorthCzk) : '—'}</strong>
+      <small>{trend?.hasReliableHistory ? `${czk.format(trend.annualContributionCzk)} roční tempo vkladů` : 'Pro spolehlivý odhad je potřeba alespoň 90 dní historie'}</small>
+      <p>Bez předpokládaného tržního zhodnocení. Odhad vychází z dosavadních vkladů, výběrů a naplánovaných splátek.</p>
+    </div>
+    <DashboardChart
+      history={(trend?.history ?? []).map((point) => ({ date: point.date, value: point.netWorthCzk }))}
+      projection={(trend?.projection ?? []).map((point) => ({ date: point.date, value: point.netWorthCzk }))}
+      ariaLabel="Historie a základní trend čistého jmění"
+      loading={loading}
+      error={error}
+    />
+  </div>
+}
+
+function DashboardChart({ history, projection = [], ariaLabel, loading, error }: { history: { date: string; value: number }[]; projection?: { date: string; value: number }[]; ariaLabel: string; loading: boolean; error: boolean }) {
+  const gradientId = useId().replaceAll(':', '')
+  const all = [...history, ...projection.slice(1)].filter((point) => Number.isFinite(point.value) && Number.isFinite(Date.parse(`${point.date}T00:00:00Z`)))
+  if (loading) return <div className="dashboard-chart-state" role="status">Načítám historii…</div>
+  if (error) return <div className="dashboard-chart-state error" role="alert">Historii se nepodařilo načíst.</div>
+  if (history.length < 2 || all.length < 2) return <div className="dashboard-chart-state">Pro graf zatím není dost záznamů.</div>
+  const width = 900, height = 250, padX = 18, padY = 18
+  const times = all.map((point) => Date.parse(`${point.date}T00:00:00Z`))
+  const values = all.map((point) => point.value)
+  const minTime = Math.min(...times), maxTime = Math.max(...times)
+  const rawMin = Math.min(...values), rawMax = Math.max(...values)
+  const spread = Math.max(rawMax - rawMin, Math.abs(rawMax) * .08, 1)
+  const min = rawMin - spread * .12, max = rawMax + spread * .12
+  const x = (date: string) => padX + (Date.parse(`${date}T00:00:00Z`) - minTime) / Math.max(1, maxTime - minTime) * (width - padX * 2)
+  const y = (value: number) => height - padY - (value - min) / (max - min) * (height - padY * 2)
+  const path = (items: { date: string; value: number }[]) => items.map((point, index) => `${index === 0 ? 'M' : 'L'} ${x(point.date)} ${y(point.value)}`).join(' ')
+  const historyPath = path(history)
+  const projectionPath = projection.length > 1 ? path(projection) : ''
+  const area = `${historyPath} L ${x(history.at(-1)!.date)} ${height - padY} L ${x(history[0].date)} ${height - padY} Z`
+  return <div className="dashboard-chart-visual">
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={ariaLabel}>
+      <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--green)" stopOpacity=".2"/><stop offset="1" stopColor="var(--green)" stopOpacity="0"/></linearGradient></defs>
+      <path className="dashboard-chart-area" d={area} fill={`url(#${gradientId})`} />
+      <path className="dashboard-history-line" d={historyPath} />
+      {projectionPath && <path className="dashboard-projection-line" d={projectionPath} />}
+    </svg>
+    <div className="dashboard-chart-axis"><span>{shortDate.format(new Date(`${all[0].date}T12:00:00`))}</span>{projectionPath && <b>Odhad</b>}<span>{shortDate.format(new Date(`${all.at(-1)!.date}T12:00:00`))}</span></div>
+    <div className="dashboard-chart-scale"><span>{compactCzk.format(rawMax)}</span><span>{compactCzk.format(rawMin)}</span></div>
+  </div>
+}
+
+function StrategyCard({ data, loading, error, onClick }: { data?: StrategyOverview; loading: boolean; error: boolean; onClick: () => void }) {
+  const valid = data && [data.portfolioValueCzk, data.progressPercent, data.profitCzk, data.triggerCzk].every(Number.isFinite)
+  const recommendation = valid ? data.recommendation : loading ? 'NAČÍTÁM' : 'NEDOSTUPNÉ'
+  return <button className="dashboard-focus-card dashboard-strategy-card" type="button" onClick={onClick}>
+    <div className="dashboard-card-header"><span><CircleGauge size={17} />BTC strategie</span><ChevronRight size={15} /></div>
+    <div className="dashboard-card-primary"><span>Stav strategie</span><strong className={recommendation === 'PRODAT' ? 'positive' : undefined}>{recommendation}</strong><small>{error ? 'Strategii se nepodařilo načíst' : valid ? `Zisk od checkpointu ${czk.format(data.profitCzk)}` : 'Načítám aktuální stav'}</small></div>
+    <div className="dashboard-strategy-progress"><div><span style={{ width: `${valid ? Math.min(100, Math.max(0, data.progressPercent)) : 0}%` }} /></div><small>{valid ? `Trigger ${czk.format(data.triggerCzk)}` : 'Trigger'}</small><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></div>
+    {valid && data.recommendedTransferCzk > 0 && <p>Připraveno k přesunu do VGLA <b>{czk.format(data.recommendedTransferCzk)}</b></p>}
   </button>
 }
 
-function VwcePortfolioCard({ data, priceCzk, eurCzk, onClick }: { data?: VwceOverview; priceCzk?: number; eurCzk?: number; onClick: () => void }) {
-  const totals = data?.totals
-  const price = typeof priceCzk === 'number' && Number.isFinite(priceCzk) && priceCzk > 0 ? priceCzk : null
-  const shares = typeof totals?.shares === 'number' ? totals.shares : null
-  const costBasis = typeof totals?.costBasisEur === 'number' && typeof eurCzk === 'number' ? totals.costBasisEur * eurCzk : null
-  const value = price !== null && shares !== null ? shares * price : null
-  const gain = value !== null && costBasis !== null ? value - costBasis : null
-  const annualRent = value !== null && typeof totals?.rentRatePercent === 'number' ? value * totals.rentRatePercent / 100 : null
-  return <button className="dashboard-card dashboard-asset-card dashboard-vwce-card" type="button" aria-label="Otevřít VGLA portfolio" onClick={onClick}>
-    <DashboardCardHeader title="VGLA Portfolio" />
-    <div className="dashboard-asset-main"><span>Hodnota VGLA</span><strong>{value === null ? '—' : czk.format(value)}</strong><small>{shares === null ? 'Načítám…' : `${shares.toLocaleString('cs-CZ', { maximumFractionDigits: 4 })} ks`}</small></div>
-    <div className="dashboard-asset-footer"><DashboardSmallMetric label="Zisk / Ztráta" value={gain === null ? '—' : czk.format(gain)} tone={gain === null ? undefined : gain >= 0 ? 'positive' : 'negative'} /><DashboardSmallMetric label="Renta / měs." value={annualRent === null ? '—' : czk.format(annualRent / 12)} tone={annualRent && annualRent > 0 ? 'positive' : undefined} /></div>
+function RentCard({ overview, price, loading, error, onClick }: { overview?: VglaOverview; price?: VglaPrice; loading: boolean; error: boolean; onClick: () => void }) {
+  const totals = overview?.totals
+  const valid = Boolean(totals && Number.isFinite(totals.shares) && Number.isFinite(totals.rentRatePercent) && Number.isFinite(price?.priceCzk))
+  const value = valid ? totals!.shares * price!.priceCzk : null
+  const annual = value === null ? null : value * totals!.rentRatePercent / 100
+  const monthly = annual === null ? null : annual / 12
+  return <button className="dashboard-focus-card dashboard-rent-card" type="button" onClick={onClick}>
+    <div className="dashboard-card-header"><span><PiggyBank size={17} />VGLA renta</span><ChevronRight size={15} /></div>
+    <div className="dashboard-card-primary"><span>Měsíční renta</span><strong>{monthly === null ? '—' : czk.format(monthly)}</strong><small>{error ? 'Rentu se nepodařilo načíst' : loading ? 'Načítám portfolio…' : `${totals?.rentRatePercent ?? 0} % p.a. · ročně ${czk.format(annual ?? 0)}`}</small></div>
+    <div className="dashboard-rent-footer"><div><span>Renta pool</span><strong>{czk.format(totals?.rentPoolCzk ?? 0)}</strong></div><div><span>Další dostupná renta</span><strong>{czk.format((totals?.rentPoolCzk ?? 0) + (monthly ?? 0))}</strong></div></div>
+    {price?.isStale && <p>Tržní cena je dočasně zastaralá.</p>}
   </button>
 }
 
-function StrategyCard({ data, onClick }: { data?: StrategyOverview; onClick: () => void }) {
-  const valid = data && typeof data.portfolioValueCzk === 'number' && typeof data.progressPercent === 'number'
-  const recommendation = valid ? data.recommendation : 'NAČÍTÁM'
-  const tone = recommendation === 'PRODAT' ? 'sell' : 'hold'
-  return <button className="dashboard-card dashboard-strategy-card" type="button" aria-label="Otevřít BTC strategii" onClick={onClick}>
-    <DashboardCardHeader title="BTC Strategie" />
-    <div className="dashboard-strategy-main"><span>Hodnota BTC portfolia</span><strong>{valid ? czk.format(data.portfolioValueCzk) : '—'}</strong><small>{valid ? `${data.btcQuantity.toFixed(6)} BTC` : 'Načítám strategii…'}</small></div>
-    <div className="dashboard-strategy-status"><div><span>Zisk od checkpointu</span><strong className={data && data.profitCzk < 0 ? 'negative' : undefined}>{valid ? czk.format(data.profitCzk) : '—'}</strong></div><b className={tone}>{recommendation}</b></div>
-    <div className="dashboard-strategy-progress"><div><span style={{ width: `${valid ? Math.min(100, Math.max(0, data.progressPercent)) : 0}%` }} /></div><small>{data ? `Trigger ${czk.format(data.triggerCzk)}` : 'Trigger'}</small><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></div>
-    {valid && data.recommendedTransferCzk > 0 && <p>Celkem přesunout do VGLA: <strong>{czk.format(data.recommendedTransferCzk)}</strong></p>}
-  </button>
-}
-
-function IncomePlanCard({ data, onClick }: { data?: IncomeOverview; onClick: () => void }) {
-  const debts = Array.isArray(data?.debts) ? data.debts : []
-  const settings = data?.settings
-  const hasDebts = debts.length > 0
-  const allocations = hasDebts
-    ? [
-        { label: 'BTC', percent: settings?.withDebtBtcPercent ?? 0, tone: 'btc' },
-        { label: 'Dluhy', percent: settings?.withDebtDebtPercent ?? 0, tone: 'debt' },
-        { label: 'Spending', percent: settings?.withDebtCashPercent ?? 0, tone: 'cash' },
-      ]
-    : [
-        { label: 'BTC', percent: settings?.withoutDebtBtcPercent ?? 0, tone: 'btc' },
-        { label: 'Spending', percent: settings?.withoutDebtCashPercent ?? 0, tone: 'cash' },
-      ]
-  const totalDebt = debts.reduce((sum, debt) => sum + debt.balanceCzk, 0)
-  return <button className="dashboard-card dashboard-income-card" type="button" aria-label="Otevřít Income plán" onClick={onClick}>
-    <DashboardCardHeader title="Income plán" />
-    <div className="dashboard-income-allocations">{allocations.map((allocation) => <div className={allocation.tone} key={allocation.label}><span>{allocation.label}</span><strong>{allocation.percent} %</strong></div>)}</div>
-    {hasDebts ? <div className="dashboard-income-debts"><span>{debts.length} {debts.length === 1 ? 'dluh' : debts.length < 5 ? 'dluhy' : 'dluhů'}</span><div><span>Celkem</span><strong>{czk.format(totalDebt)}</strong></div>{(data?.scheduledDebtPaymentCzk ?? 0) > 0 && <small>Plánované splátky: {czk.format(data?.scheduledDebtPaymentCzk ?? 0)}</small>}</div> : <div className="dashboard-income-free"><span>{settings ? 'Žádné dluhy · režim bez dluhů' : 'Načítám Income plán…'}</span>{settings && <strong>Výchozí kapitál {czk.format(settings.defaultCapitalCzk)}</strong>}</div>}
-  </button>
-}
-
-function DashboardCardHeader({ title }: { title: string }) {
-  return <div className="dashboard-card-header"><span>{title}</span><ChevronRight size={13} /></div>
-}
-
-function DashboardSmallMetric({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return <div><span>{label}</span><strong className={tone}>{value}</strong></div>
-}
-
-function DashboardMetric({ label, value, tone }: { label: string; value?: number; tone?: string }) {
-  return <div><span>{label}</span><strong className={tone}>{value === undefined ? '—' : czk.format(value)}</strong></div>
-}
-
-function DashboardNetWorthChart({ points }: { points: WealthPoint[] }) {
-  if (points.length < 2) return <div className="dashboard-chart-empty">Pro 30denní graf zatím není dost záznamů.</div>
-  const width = 600
-  const height = 120
-  const padding = 8
-  const values = points.map((point) => point.trackedNetWorthCzk)
-  const rawMin = Math.min(...values)
-  const rawMax = Math.max(...values)
-  const spread = Math.max(rawMax - rawMin, Math.abs(rawMax) * .05, 1)
-  const min = rawMin - spread * .1
-  const max = rawMax + spread * .1
-  const x = (index: number) => padding + index / (points.length - 1) * (width - padding * 2)
-  const y = (value: number) => height - padding - (value - min) / (max - min) * (height - padding * 2)
-  const line = points.map((point, index) => `${x(index)},${y(point.trackedNetWorthCzk)}`).join(' ')
-  const area = `${padding},${height - padding} ${line} ${width - padding},${height - padding}`
-  const rising = values.at(-1)! >= values[0]
-  return <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Vývoj čistého jmění za 30 dní">
-    <defs><linearGradient id="dashboard-net-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" className={rising ? 'up' : 'down'} stopOpacity=".18" /><stop offset="1" className={rising ? 'up' : 'down'} stopOpacity="0" /></linearGradient></defs>
-    <polygon points={area} fill="url(#dashboard-net-fill)" />
-    <polyline className={rising ? 'up' : 'down'} points={line} />
-  </svg>
+function normalizePoints(value: WealthPoint[] | undefined) {
+  if (!Array.isArray(value)) return []
+  return value.filter((point) => /^\d{4}-\d{2}-\d{2}$/.test(point.date) && Number.isFinite(point.trackedNetWorthCzk) && Number.isFinite(point.grossAssetsCzk)).sort((a, b) => a.date.localeCompare(b.date))
 }
