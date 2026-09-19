@@ -179,12 +179,21 @@ function DashboardChart({ history, loading, fetching, error, onRetry }: { histor
 
 function StrategyCard({ data, loading, error, onClick }: { data?: StrategyOverview; loading: boolean; error: boolean; onClick: () => void }) {
   const valid = data && [data.portfolioValueCzk, data.progressPercent, data.profitCzk, data.triggerCzk].every(Number.isFinite)
-  const recommendation = valid ? data.recommendation : loading ? 'NAČÍTÁM' : 'NEDOSTUPNÉ'
-  return <button className="dashboard-focus-card dashboard-strategy-card" type="button" aria-label="BTC strategie" onClick={onClick}>
-    <div className="dashboard-card-primary"><span>BTC strategie</span><strong className={recommendation === 'PRODAT' ? 'positive' : undefined}>{recommendation}</strong><small>{error ? 'Strategii se nepodařilo načíst' : valid ? `Zisk od checkpointu ${czk.format(data.profitCzk)}` : 'Načítám aktuální stav'}</small></div>
-    <div className="dashboard-strategy-progress"><div><span style={{ width: `${valid ? Math.min(100, Math.max(0, data.progressPercent)) : 0}%` }} /></div><small>{valid ? `Trigger ${czk.format(data.triggerCzk)}` : 'Trigger'}</small><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></div>
-    {valid && data.recommendedTransferCzk > 0 && <p>Připraveno k přesunu do VGLA <b>{czk.format(data.recommendedTransferCzk)}</b></p>}
-  </button>
+  const transfer = valid && data.recommendation === 'PRODAT'
+  const recommendation = valid ? transfer ? 'PŘEVÉST' : 'DRŽET' : loading ? 'NAČÍTÁM' : 'NEDOSTUPNÉ'
+  const progress = valid ? Math.min(100, Math.max(0, data.progressPercent)) : 0
+  return <section className="dashboard-focus-card dashboard-strategy-card" aria-label="BTC strategie">
+    <h3>BTC strategie</h3>
+    <div className="dashboard-strategy-state">
+      {transfer
+        ? <button type="button" onClick={onClick}>PŘEVÉST</button>
+        : <strong className={error ? 'negative' : undefined}>{recommendation}</strong>}
+    </div>
+    <div className="dashboard-strategy-progress">
+      <strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong>
+      <div><span style={{ width: `${progress}%` }} /></div>
+    </div>
+  </section>
 }
 
 function IncomeCard({ data, loading }: { data?: IncomeOverview; loading: boolean }) {

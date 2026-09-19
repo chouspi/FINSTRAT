@@ -381,9 +381,9 @@ describe("DashboardPage", () => {
       </QueryClientProvider>,
     );
 
-    const strategyCard = await screen.findByRole("button", { name: /BTC strategie/ });
-    expect(await within(strategyCard).findByText("PRODAT")).toBeInTheDocument();
-    expect(within(strategyCard).getByText(/Připraveno k přesunu do VGLA/)).toBeInTheDocument();
+    const strategyCard = await screen.findByRole("region", { name: "BTC strategie" });
+    const transferButton = await within(strategyCard).findByRole("button", { name: "PŘEVÉST" });
+    expect(within(strategyCard).getByText("100 %")).toBeInTheDocument();
     const rentCard = screen.getByRole("button", { name: /VGLA renta/ });
     expect(within(rentCard).getByText(/Měsíčně/)).toBeInTheDocument();
     const incomeCard = screen.getByRole("region", { name: "Income plán" });
@@ -397,7 +397,7 @@ describe("DashboardPage", () => {
     expect(within(incomeCard).getByText(/2[  ]075[  ]Kč/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /BTC účty/ })).not.toBeInTheDocument();
 
-    await user.click(strategyCard);
+    await user.click(transferButton);
     await waitFor(() => expect(router.state.location.pathname).toBe("/strategy"));
   });
 });
