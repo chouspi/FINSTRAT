@@ -21,3 +21,12 @@
 @container(max-width:720px){.dashboard-content{padding:16px 14px 32px}.dashboard-focus-grid{grid-template-columns:1fr}.dashboard-income-card{grid-column:auto;grid-row:auto}.dashboard-income-outputs{display:flex;border-bottom:0}.dashboard-income-output{padding:0;border-right:0;border-bottom:1px solid var(--border)}.dashboard-income-output:last-child{border-bottom:0}.dashboard-chart-toolbar{align-items:flex-start;flex-direction:column}.dashboard-timeframes{align-self:stretch}.dashboard-timeframes button{flex:1}.dashboard-chart-frame svg{height:230px}}
 @container(max-width:480px){.dashboard-panel-header{align-items:flex-start;padding:15px}.dashboard-heading-copy{align-items:flex-start}.dashboard-heading-copy p{max-width:210px}.dashboard-chart-toolbar{min-height:0;padding:17px 15px 12px}.dashboard-chart-summary strong{font-size:22px}.dashboard-chart-visual{margin:0 8px 8px;padding:8px}.dashboard-chart-grid{grid-template-columns:1fr}.dashboard-chart-frame svg{height:200px}.dashboard-y-axis{display:none}.dashboard-x-axis{margin-left:0}.dashboard-x-axis time:not(.start):not(.end){display:none}.dashboard-card-primary{padding-inline:16px}.dashboard-rent-footer,.dashboard-strategy-progress{margin-inline:16px}}
 @media(prefers-reduced-motion:reduce){.dashboard-chart-summary--loading,.dashboard-chart-skeleton{animation:none}}
+
+/* Keep the compact Income rows optically centered around their icons. */
+.dashboard-income-input input{height:100%;display:block;padding:0;line-height:48px}
+.dashboard-income-input b{height:100%;display:flex;align-items:center;padding-left:10px;line-height:1}
+.dashboard-income-output{flex:1;align-content:center;align-items:normal;column-gap:9px;row-gap:5px}
+.dashboard-income-icon{align-self:center}
+.dashboard-income-output>span:nth-child(2),.dashboard-income-output strong{align-self:end;line-height:1.2}
+.dashboard-income-output strong{text-align:right;white-space:nowrap}
+.dashboard-income-output b{align-self:start;line-height:1.2}
