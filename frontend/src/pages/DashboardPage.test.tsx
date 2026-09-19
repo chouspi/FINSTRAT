@@ -342,6 +342,8 @@ describe("DashboardPage", () => {
     );
 
     expect(await screen.findByText("Čisté jmění", { selector: ".dashboard-panel-header > span" })).toBeInTheDocument();
+    expect(await screen.findByText(/-?20[  ]000[  ]Kč/, { selector: ".dashboard-chart-copy > strong" })).toHaveClass("negative");
+    expect(screen.getByText("za poslední měsíc")).toBeInTheDocument();
     expect(await screen.findByRole("img", { name: "Vývoj čistého jmění" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "1M" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Trend" })).not.toBeInTheDocument();

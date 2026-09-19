@@ -86,17 +86,9 @@
 
 .dashboard-chart-copy > small {
   display: block;
-  color: var(--green);
-  font-size: .82rem;
-  font-weight: 750;
-}
-
-.dashboard-chart-copy > p {
-  max-width: none;
-  margin: .7rem 0 0;
   color: var(--text-muted);
-  font-size: .8rem;
-  line-height: 1.55;
+  font-size: .72rem;
+  font-weight: 650;
 }
 
 .dashboard-chart-visual {
@@ -284,10 +276,6 @@
 
   .dashboard-chart-copy {
     padding: 0;
-  }
-
-  .dashboard-chart-copy > p {
-    margin-top: .8rem;
   }
 
   .dashboard-chart-visual svg {

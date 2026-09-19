@@ -23,12 +23,11 @@ const shortDate = new Intl.DateTimeFormat('cs-CZ', { month: 'short', year: 'nume
 
 export function DashboardPage() {
   const navigate = useNavigate()
-  const wealth = useQuery({ queryKey: ['wealth', 'history', 3650], queryFn: () => apiRequest<WealthHistory>('/api/wealth/history?days=3650'), retry: false })
+  const wealth = useQuery({ queryKey: ['wealth', 'history', 30], queryFn: () => apiRequest<WealthHistory>('/api/wealth/history?days=30'), retry: false })
   const strategy = useQuery({ queryKey: ['strategy', 'overview'], queryFn: () => apiRequest<StrategyOverview>('/api/strategy/overview'), retry: false })
   const vgla = useQuery({ queryKey: ['vgla', 'overview'], queryFn: () => apiRequest<VglaOverview>('/api/vgla/overview'), retry: false })
   const vglaPrice = useQuery({ queryKey: ['market-data', 'vgla-price'], queryFn: () => apiRequest<VglaPrice>('/api/market-data/vgla-price'), retry: false })
   const points = normalizePoints(wealth.data?.points)
-  const current = points.at(-1) ?? null
 
   return <section className="dashboard-page">
     <section className="dashboard-chart-panel" aria-labelledby="dashboard-chart-title">
@@ -36,7 +35,7 @@ export function DashboardPage() {
         <span id="dashboard-chart-title">Čisté jmění</span>
         <button className="dashboard-wealth-link" type="button" onClick={() => void navigate({ to: '/wealth', search: { tab: 'net' } })}>Detail <ChevronRight size={14} /></button>
       </div>
-      <NetWorthView points={points} current={current} loading={wealth.isPending} error={wealth.isError} />
+      <NetWorthView points={points} loading={wealth.isPending} error={wealth.isError} />
     </section>
     <div className="dashboard-focus-grid">
       <StrategyCard data={strategy.data} loading={strategy.isPending} error={strategy.isError} onClick={() => void navigate({ to: '/strategy' })} />
@@ -45,14 +44,14 @@ export function DashboardPage() {
   </section>
 }
 
-function NetWorthView({ points, current, loading, error }: { points: WealthPoint[]; current: WealthPoint | null; loading: boolean; error: boolean }) {
+function NetWorthView({ points, loading, error }: { points: WealthPoint[]; loading: boolean; error: boolean }) {
   const first = points[0]
+  const current = points.at(-1)
   const change = current && first ? current.trackedNetWorthCzk! - first.trackedNetWorthCzk! : null
   return <div className="dashboard-chart-content">
     <div className="dashboard-chart-copy">
-      <strong className={(current?.trackedNetWorthCzk ?? 0) < 0 ? 'negative' : undefined}>{current ? czk.format(current.trackedNetWorthCzk!) : '—'}</strong>
-      <small>{change === null ? 'Historie zatím není dostupná' : `${change >= 0 ? '+' : ''}${czk.format(change)} za celé sledované období`}</small>
-      <p>Aktiva minus spotřebitelské dluhy. Hypotéka se do této metriky nezapočítává.</p>
+      <strong className={change === null ? undefined : change > 0 ? 'positive' : 'negative'}>{change === null ? '—' : `${change > 0 ? '+' : ''}${czk.format(change)}`}</strong>
+      <small>{change === null ? 'Historie zatím není dostupná' : 'za poslední měsíc'}</small>
     </div>
     <DashboardChart history={points.map((point) => ({ date: point.date, value: point.trackedNetWorthCzk! }))} ariaLabel="Vývoj čistého jmění" loading={loading} error={error} />
   </div>
