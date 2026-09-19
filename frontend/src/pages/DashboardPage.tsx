@@ -252,11 +252,25 @@ function RentCard({ overview, price, loading, error, onClick }: { overview?: Vgl
   const value = valid ? totals!.shares * price!.priceCzk : null
   const annual = value === null ? null : value * totals!.rentRatePercent / 100
   const monthly = annual === null ? null : annual / 12
+  const daysToRent = daysUntilNextRent()
   return <button className="dashboard-focus-card dashboard-rent-card" type="button" aria-label="VGLA renta" onClick={onClick}>
-    <div className="dashboard-card-primary"><span>VGLA renta</span><strong className="positive">{monthly === null ? '—' : czk.format(monthly)}</strong><small>{error ? 'Rentu se nepodařilo načíst' : loading ? 'Načítám portfolio…' : `Měsíčně · ${totals?.rentRatePercent ?? 0} % p.a. · ročně ${czk.format(annual ?? 0)}`}</small></div>
-    <div className="dashboard-rent-footer"><div><span>Renta pool</span><strong>{czk.format(totals?.rentPoolCzk ?? 0)}</strong></div><div><span>Další dostupná renta</span><strong>{czk.format((totals?.rentPoolCzk ?? 0) + (monthly ?? 0))}</strong></div></div>
-    {price?.isStale && <p>Tržní cena je dočasně zastaralá.</p>}
+    <h3>VGLA renta</h3>
+    <div className="dashboard-rent-amount"><strong className="positive">{error || loading || monthly === null ? '—' : czk.format(monthly)}</strong></div>
+    <div className="dashboard-rent-countdown"><span>Do další renty</span><strong>{daysToRent === 0 ? 'Dnes' : `${daysToRent} ${dayLabel(daysToRent)}`}</strong></div>
   </button>
+}
+
+function daysUntilNextRent() {
+  const today = new Date()
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const nextRent = today.getDate() === 1 ? startOfToday : new Date(today.getFullYear(), today.getMonth() + 1, 1)
+  return Math.round((nextRent.getTime() - startOfToday.getTime()) / 86_400_000)
+}
+
+function dayLabel(days: number) {
+  if (days === 1) return 'den'
+  if (days >= 2 && days <= 4) return 'dny'
+  return 'dní'
 }
 
 function validDate(value: string) {

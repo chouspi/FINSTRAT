@@ -386,7 +386,10 @@ describe("DashboardPage", () => {
     expect(within(strategyCard).getByText("100 %")).toBeInTheDocument();
     expect(within(strategyCard).getByText(/50[  ]000[  ]Kč \/ 25[  ]000[  ]Kč/)).toBeInTheDocument();
     const rentCard = screen.getByRole("button", { name: /VGLA renta/ });
-    expect(within(rentCard).getByText(/Měsíčně/)).toBeInTheDocument();
+    expect(within(rentCard).getByText("VGLA renta")).toBeInTheDocument();
+    expect(within(rentCard).getByText(/133.Kč/)).toHaveClass("positive");
+    expect(within(rentCard).getByText(/^(Dnes|\d+ (den|dny|dní))$/)).toBeInTheDocument();
+    expect(within(rentCard).queryByText("Renta pool")).not.toBeInTheDocument();
     const incomeCard = screen.getByRole("region", { name: "Income plán" });
     const capitalInput = within(incomeCard).getByRole("textbox", { name: "Částka k rozdělení" });
     expect(capitalInput).toHaveValue("21 600");
