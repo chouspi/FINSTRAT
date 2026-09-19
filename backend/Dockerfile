@@ -14,6 +14,5 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0.10-noble-chiseled
 WORKDIR /app
 COPY --from=build --chown=app:app /app/publish .
 COPY --chown=app:app backend/DataProtectionKeys/ /home/app/.aspnet/DataProtection-Keys/
-COPY --chown=app:app ["frontend/src/assets/last day I gambled/counter_kokotstvi.txt", "/app/data/counter_kokotstvi.txt"]
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Finstrat.Api.dll"]

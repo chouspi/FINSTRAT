@@ -13,7 +13,6 @@ namespace Finstrat.Api.Tests;
 public sealed class IdentityApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
-    private readonly string _counterDirectory = Path.Combine(Path.GetTempPath(), $"finstrat-counter-{Guid.NewGuid():N}");
     public string ConnectionString => _postgres.GetConnectionString();
 
     public async Task InitializeAsync()
@@ -26,7 +25,6 @@ public sealed class IdentityApiFixture : WebApplicationFactory<Program>, IAsyncL
     {
         await base.DisposeAsync();
         await _postgres.DisposeAsync();
-        if (Directory.Exists(_counterDirectory)) Directory.Delete(_counterDirectory, true);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -39,7 +37,6 @@ public sealed class IdentityApiFixture : WebApplicationFactory<Program>, IAsyncL
             {
                 ["ConnectionStrings:Database"] = _postgres.GetConnectionString(),
                 ["WealthSnapshots:SchedulerEnabled"] = "false",
-                ["GamblingCounter:FilePath"] = Path.Combine(_counterDirectory, "counter_kokotstvi.txt"),
             });
         });
         builder.ConfigureServices(services =>
@@ -126,8 +123,6 @@ public sealed class IdentityApiTests(IdentityApiFixture fixture)
         Assert.True(payload.GetProperty("isDefault").GetBoolean());
         Assert.Equal("owner", payload.GetProperty("role").GetString());
 
-        var counterResponse = await client.GetAsync("/api/identity/gambling-counter");
-        Assert.Equal(HttpStatusCode.Forbidden, counterResponse.StatusCode);
     }
 
     [Fact]
@@ -192,19 +187,6 @@ public sealed class IdentityApiTests(IdentityApiFixture fixture)
         var renewResponse = await client.SendAsync(renewRequest);
         Assert.Equal(HttpStatusCode.NoContent, renewResponse.StatusCode);
 
-        var initialCounter = await client.GetFromJsonAsync<JsonElement>("/api/identity/gambling-counter");
-        Assert.Equal(0, initialCounter.GetProperty("count").GetInt64());
-
-        token = await GetAntiforgeryToken(client);
-        using var incrementRequest = new HttpRequestMessage(HttpMethod.Post, "/api/identity/gambling-counter");
-        incrementRequest.Headers.Add("X-CSRF-TOKEN", token);
-        var incrementResponse = await client.SendAsync(incrementRequest);
-        Assert.Equal(HttpStatusCode.OK, incrementResponse.StatusCode);
-        var incrementedCounter = await incrementResponse.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal(1, incrementedCounter.GetProperty("count").GetInt64());
-
-        var persistedCounter = await client.GetFromJsonAsync<JsonElement>("/api/identity/gambling-counter");
-        Assert.Equal(1, persistedCounter.GetProperty("count").GetInt64());
     }
 
     private static async Task<string> GetAntiforgeryToken(HttpClient client)
