@@ -30,7 +30,17 @@ describe('StrategyPage', () => {
     expect(within(strategyPage).getByText('Trigger překročen')).toBeInTheDocument()
     expect(within(strategyPage).getByRole('progressbar', { name: 'Postup k triggeru' })).toHaveAttribute('aria-valuenow', '100')
     expect(within(strategyPage).getByText('PRAVIDLA REALIZACE')).toBeInTheDocument()
+    expect(within(strategyPage).getByRole('button', { name: 'Provést převod' })).toBeInTheDocument()
     expect(within(strategyPage).queryByText('DETAIL VÝPOČTU')).not.toBeInTheDocument()
     expect(within(strategyPage).queryByRole('link', { name: /Upravit parametry strategie/ })).not.toBeInTheDocument()
+  })
+
+  it('opens the execution dialog directly from the route', async () => {
+    const router = createTestRouter('/strategy?dialog=execute')
+    await router.load()
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RouterProvider router={router} /></QueryClientProvider>)
+    const dialog = await screen.findByRole('dialog', { name: 'Převést 20 000 Kč' })
+    expect(within(dialog).getByText('0.00666667 BTC')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /Pokračovat na BTC účty/ })).toBeInTheDocument()
   })
 })

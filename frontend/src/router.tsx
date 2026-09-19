@@ -70,6 +70,9 @@ const strategyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/strategy",
   component: StrategyPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    dialog: search.dialog === "execute" ? ("execute" as const) : undefined,
+  }),
 });
 const taxesRoute = createRoute({
   getParentRoute: () => rootRoute,

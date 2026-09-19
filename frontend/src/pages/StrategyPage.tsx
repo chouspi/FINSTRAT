@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, Bitcoin, CircleGauge, Flag, Landmark, Target, TrendingUp } from 'lucide-react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
+import { ArrowRight, Bitcoin, CircleGauge, Flag, Landmark, Target, TrendingUp, X } from 'lucide-react'
 import { apiRequest } from '../lib/api'
 import type { StrategyOverview } from '../lib/strategy'
 import './StrategyPage.css'
@@ -7,6 +8,8 @@ import './StrategyPage.css'
 const czk = new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })
 
 export function StrategyPage() {
+  const navigate = useNavigate()
+  const { dialog } = useSearch({ from: '/strategy' })
   const overview = useQuery({ queryKey: ['strategy', 'overview'], queryFn: () => apiRequest<StrategyOverview>('/api/strategy/overview'), retry: false })
   if (overview.isPending) return <section className="strategy-page"><div className="strategy-loading" /></section>
   if (overview.isError) return <section className="strategy-page strategy-state"><CircleGauge size={28} /><h2>Strategii se nepodařilo načíst</h2><button type="button" onClick={() => overview.refetch()}>Zkusit znovu</button></section>
@@ -19,6 +22,7 @@ export function StrategyPage() {
   const statusCopy = triggered
     ? 'Profit překročil nastavený trigger. Realizujte pouze doporučenou část a zbytek BTC ponechte v portfoliu.'
     : `Do další realizace zbývá ${czk.format(data.remainingCzk)} zisku nad checkpoint.`
+  const closeExecution = () => void navigate({ to: '/strategy', search: { dialog: undefined }, replace: true })
 
   return <section className={`strategy-page strategy-page--${triggered ? 'sell' : 'hold'}`}>
     <div className="strategy-content">
@@ -32,6 +36,7 @@ export function StrategyPage() {
             <p>{triggered ? 'FINÁLNÍ SUMA K PŘEVODU' : 'AKTIVNÍ CHECKPOINT'}</p>
             <h1 id="strategy-status-title">{statusTitle}</h1>
             <span>{statusCopy}</span>
+            {triggered && <button className="strategy-execute" type="button" onClick={() => void navigate({ to: '/strategy', search: { dialog: 'execute' } })}>Provést převod</button>}
           </div>
         </div>
         <div className="strategy-summary-stats">
@@ -71,6 +76,7 @@ export function StrategyPage() {
         </div>
       </section>
     </div>
+    {triggered && dialog === 'execute' && <ExecutionDialog data={data} onClose={closeExecution} onContinue={() => void navigate({ to: '/bitcoin', search: { dialog: undefined } })} />}
   </section>
 }
 
@@ -82,4 +88,18 @@ function StrategyMetric({ icon: Icon, label, value, sub, tone }: { icon: Icon; l
 
 function RuleStep({ number, label, value, note, tone }: { number: string; label: string; value: string; note: string; tone?: 'green' }) {
   return <article className={`strategy-rule-step${tone ? ` strategy-rule-step--${tone}` : ''}`}><span>{number}</span><div><p>{label}</p><strong>{value}</strong><small>{note}</small></div></article>
+}
+
+function ExecutionDialog({ data, onClose, onContinue }: { data: StrategyOverview; onClose: () => void; onContinue: () => void }) {
+  const quantity = data.btcPriceCzk > 0 ? data.recommendedTransferCzk / data.btcPriceCzk : 0
+  return <div className="dialog-backdrop strategy-execution-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section className="strategy-execution-dialog" role="dialog" aria-modal="true" aria-labelledby="strategy-execution-title">
+      <button className="strategy-execution-close" type="button" aria-label="Zavřít realizaci" onClick={onClose}><X size={18} /></button>
+      <span>REALIZACE STRATEGIE</span>
+      <h2 id="strategy-execution-title">Převést {czk.format(data.recommendedTransferCzk)}</h2>
+      <p>Prodejte odpovídající část BTC a výnos převeďte do VGLA. Po provedení obchodu zapište prodej v BTC účtech.</p>
+      <div className="strategy-execution-summary"><span>Odhad BTC k prodeji<strong>{quantity.toFixed(8)} BTC</strong></span><span>Použitá cena BTC<strong>{czk.format(data.btcPriceCzk)}</strong></span></div>
+      <div className="strategy-execution-actions"><button type="button" onClick={onClose}>Zrušit</button><button className="primary" type="button" onClick={onContinue}>Pokračovat na BTC účty <ArrowRight size={15} /></button></div>
+    </section>
+  </div>
 }

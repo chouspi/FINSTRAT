@@ -399,5 +399,7 @@ describe("DashboardPage", () => {
 
     await user.click(transferButton);
     await waitFor(() => expect(router.state.location.pathname).toBe("/strategy"));
+    expect(router.state.location.search).toMatchObject({ dialog: "execute" });
+    expect(await screen.findByRole("dialog", { name: /Převést/ })).toBeInTheDocument();
   });
 });

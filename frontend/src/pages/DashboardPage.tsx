@@ -83,7 +83,7 @@ export function DashboardPage() {
         <DashboardChart history={points.map((point) => ({ date: point.date, value: point.trackedNetWorthCzk! }))} loading={wealth.isPending} fetching={wealth.isFetching} error={wealth.isError} onRetry={() => void wealth.refetch()} />
       </section>
       <div className="dashboard-focus-grid">
-        <StrategyCard data={strategy.data} loading={strategy.isPending} error={strategy.isError} onClick={() => void navigate({ to: '/strategy' })} />
+        <StrategyCard data={strategy.data} loading={strategy.isPending} error={strategy.isError} onClick={() => void navigate({ to: '/strategy', search: { dialog: 'execute' } })} />
         <IncomeCard data={income.data} loading={income.isPending} />
         <RentCard overview={vgla.data} price={vglaPrice.data} loading={vgla.isPending || vglaPrice.isPending} error={vgla.isError || vglaPrice.isError} onClick={() => void navigate({ to: '/vgla', search: { dialog: undefined } })} />
       </div>
