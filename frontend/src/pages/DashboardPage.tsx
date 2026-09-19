@@ -1,7 +1,7 @@
-import { useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useId, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronRight, CircleGauge, PiggyBank, RefreshCw, TrendingUp } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, ChevronRight, CircleGauge, PiggyBank, RefreshCw, TrendingUp } from 'lucide-react'
 import { apiRequest } from '../lib/api'
 import type { StrategyOverview } from '../lib/strategy'
 import type { WealthTrendInput } from '../lib/wealthTrend'
@@ -18,11 +18,11 @@ type VglaOverview = { totals: { shares: number; rentRatePercent: number; rentPoo
 type VglaPrice = { priceCzk: number; isStale: boolean }
 type Timeframe = '1m' | '3m' | '1y' | 'all'
 
-const TIMEFRAMES: { key: Timeframe; label: string; days: number; period: string }[] = [
-  { key: '1m', label: '1M', days: 30, period: 'za poslední měsíc' },
-  { key: '3m', label: '3M', days: 90, period: 'za poslední 3 měsíce' },
-  { key: '1y', label: '1R', days: 365, period: 'za poslední rok' },
-  { key: 'all', label: 'Vše', days: 3650, period: 'za celé sledované období' },
+const TIMEFRAMES: { key: Timeframe; label: string; days: number }[] = [
+  { key: '1m', label: '1M', days: 30 },
+  { key: '3m', label: '3M', days: 90 },
+  { key: '1y', label: '1R', days: 365 },
+  { key: 'all', label: 'Vše', days: 3650 },
 ]
 
 const czk = new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })
@@ -42,6 +42,12 @@ export function DashboardPage() {
   const vgla = useQuery({ queryKey: ['vgla', 'overview'], queryFn: () => apiRequest<VglaOverview>('/api/vgla/overview'), retry: false })
   const vglaPrice = useQuery({ queryKey: ['market-data', 'vgla-price'], queryFn: () => apiRequest<VglaPrice>('/api/market-data/vgla-price'), retry: false })
   const points = normalizePoints(wealth.data?.points)
+  const monthlyWealth = useQuery({
+    queryKey: ['wealth', 'history', 30],
+    queryFn: () => apiRequest<WealthHistory>('/api/wealth/history?days=30'),
+    retry: false,
+  })
+  const monthlyPoints = normalizePoints(monthlyWealth.data?.points)
 
   return <section className="dashboard-page">
     <div className="dashboard-content">
@@ -54,7 +60,7 @@ export function DashboardPage() {
           <button className="dashboard-wealth-link" type="button" onClick={() => void navigate({ to: '/wealth', search: { tab: 'net' } })}>Detail <ChevronRight size={14} /></button>
         </div>
         <div className="dashboard-chart-toolbar">
-          <NetWorthSummary points={points} period={selectedTimeframe.period} loading={wealth.isPending} />
+          <NetWorthSummary points={monthlyPoints} loading={monthlyWealth.isPending} />
           <div className="dashboard-timeframes" role="group" aria-label="Období grafu">
             {TIMEFRAMES.map((item) => <button key={item.key} type="button" className={timeframe === item.key ? 'active' : undefined} aria-pressed={timeframe === item.key} onClick={() => setTimeframe(item.key)}>{item.label}</button>)}
           </div>
@@ -69,20 +75,21 @@ export function DashboardPage() {
   </section>
 }
 
-function NetWorthSummary({ points, period, loading }: { points: WealthPoint[]; period: string; loading: boolean }) {
+function NetWorthSummary({ points, loading }: { points: WealthPoint[]; loading: boolean }) {
   const first = points[0]
   const current = points.at(-1)
   const change = current && first ? current.trackedNetWorthCzk! - first.trackedNetWorthCzk! : null
   if (loading) return <div className="dashboard-chart-summary dashboard-chart-summary--loading" aria-label="Načítám změnu čistého jmění" />
-  return <div className="dashboard-chart-summary">
-    <strong className={change === null ? undefined : change > 0 ? 'positive' : 'negative'}>{change === null ? '—' : `${change > 0 ? '+' : ''}${czk.format(change)}`}</strong>
-    <small>{change === null ? 'Pro výpočet změny chybí historie' : period}</small>
+  const tone = change !== null && change > 0 ? 'positive' : 'negative'
+  return <div className={`dashboard-chart-summary ${change === null ? '' : tone}`}>
+    <span className="dashboard-summary-icon">{change !== null && change > 0 ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}</span>
+    <div><strong>{change === null ? '—' : `${change > 0 ? '+' : ''}${czk.format(change)}`}</strong><small>{change === null ? 'Pro výpočet změny chybí historie' : 'za poslední měsíc'}</small></div>
   </div>
 }
 
 function DashboardChart({ history, loading, fetching, error, onRetry }: { history: { date: string; value: number }[]; loading: boolean; fetching: boolean; error: boolean; onRetry: () => void }) {
   const gradientId = useId().replaceAll(':', '')
-  const frameRef = useRef<HTMLDivElement>(null)
+  const plotRef = useRef<HTMLDivElement>(null)
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const points = history.filter((point) => Number.isFinite(point.value) && validDate(point.date))
   if (loading) return <div className="dashboard-chart-state dashboard-chart-skeleton" role="status" aria-label="Načítám historii" />
@@ -101,19 +108,22 @@ function DashboardChart({ history, loading, fetching, error, onRetry }: { histor
   const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${x(point.date)} ${y(point.value)}`).join(' ')
   const areaPath = points.length > 1 ? `${linePath} L ${x(points.at(-1)!.date)} ${height - pad.bottom} L ${x(points[0].date)} ${height - pad.bottom} Z` : ''
   const tickValues = Array.from({ length: 4 }, (_, index) => min + (max - min) * index / 3).reverse()
-  const dateIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])]
+  const dateTickCount = Math.min(5, points.length)
+  const dateIndexes = [...new Set(Array.from({ length: dateTickCount }, (_, index) => Math.round(index * (points.length - 1) / Math.max(1, dateTickCount - 1))))]
   const change = points.at(-1)!.value - points[0].value
   const tone = change > 0 ? 'positive' : 'negative'
   const active = activeIndex === null ? null : points[activeIndex]
 
-  const selectFromPointer = (event: PointerEvent<HTMLDivElement>) => {
-    const rect = frameRef.current?.getBoundingClientRect()
+  const selectAtClientX = (clientX: number) => {
+    const rect = plotRef.current?.getBoundingClientRect()
     if (!rect || rect.width === 0) return
-    const pointerTime = minTime + Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * Math.max(1, maxTime - minTime)
+    const pointerTime = minTime + Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * Math.max(1, maxTime - minTime)
     let closest = 0
     for (let index = 1; index < times.length; index++) if (Math.abs(times[index] - pointerTime) < Math.abs(times[closest] - pointerTime)) closest = index
     setActiveIndex(closest)
   }
+  const selectFromMouse = (event: MouseEvent<HTMLDivElement>) => selectAtClientX(event.clientX)
+  const selectFromPointer = (event: PointerEvent<HTMLDivElement>) => selectAtClientX(event.clientX)
   const selectFromKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
@@ -123,20 +133,26 @@ function DashboardChart({ history, loading, fetching, error, onRetry }: { histor
   }
 
   return <div className={`dashboard-chart-visual ${tone}${fetching ? ' fetching' : ''}`}>
-    <div ref={frameRef} className="dashboard-chart-frame" role="group" tabIndex={0} aria-label="Graf čistého jmění. Hodnoty lze procházet šipkami doleva a doprava." onFocus={() => setActiveIndex((index) => index ?? points.length - 1)} onBlur={() => setActiveIndex(null)} onKeyDown={selectFromKeyboard} onPointerMove={selectFromPointer} onPointerDown={selectFromPointer} onPointerLeave={() => setActiveIndex(null)}>
-      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Vývoj čistého jmění">
-        <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="currentColor" stopOpacity=".2"/><stop offset="1" stopColor="currentColor" stopOpacity="0"/></linearGradient></defs>
-        {tickValues.map((tick) => <line key={tick} className="dashboard-grid-line" x1={pad.left} x2={width - pad.right} y1={y(tick)} y2={y(tick)} />)}
-        {min < 0 && max > 0 && <line className="dashboard-zero-line" x1={pad.left} x2={width - pad.right} y1={y(0)} y2={y(0)} />}
-        {areaPath && <path className="dashboard-chart-area" d={areaPath} fill={`url(#${gradientId})`} />}
-        {points.length > 1 && <path className="dashboard-history-line" d={linePath} />}
-        {points.length === 1 && <circle className="dashboard-endpoint" cx={x(points[0].date)} cy={y(points[0].value)} r="4" />}
-        {active && <><line className="dashboard-crosshair" x1={x(active.date)} x2={x(active.date)} y1={pad.top} y2={height - pad.bottom} /><circle className="dashboard-active-point" cx={x(active.date)} cy={y(active.value)} r="5" /></>}
-      </svg>
-      <div className="dashboard-y-axis" aria-hidden="true">{tickValues.map((tick) => <span key={tick}>{compactCzk.format(tick)}</span>)}</div>
-      {active && <div className={`dashboard-chart-tooltip${activeIndex === 0 ? ' start' : activeIndex === points.length - 1 ? ' end' : ''}`} style={{ left: `${x(active.date) / width * 100}%`, top: `${y(active.value) / height * 100}%` }} aria-live="polite"><time>{chartDate.format(new Date(`${active.date}T12:00:00`))}</time><strong>{czk.format(active.value)}</strong></div>}
+    <div className="dashboard-chart-frame" role="group" tabIndex={0} aria-label="Graf čistého jmění. Hodnoty lze procházet šipkami doleva a doprava." onFocus={() => setActiveIndex((index) => index ?? points.length - 1)} onBlur={() => setActiveIndex(null)} onKeyDown={selectFromKeyboard}>
+      <div className="dashboard-chart-grid">
+        <div className="dashboard-y-axis" aria-hidden="true">{tickValues.map((tick) => <span key={tick}>{compactCzk.format(tick)}</span>)}</div>
+        <div ref={plotRef} className="dashboard-chart-plot" onMouseMove={selectFromMouse} onMouseLeave={() => setActiveIndex(null)} onPointerDown={selectFromPointer}>
+          <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Vývoj čistého jmění">
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="currentColor" stopOpacity=".2"/><stop offset="1" stopColor="currentColor" stopOpacity="0"/></linearGradient>
+            </defs>
+            {tickValues.map((tick) => <line key={tick} className="dashboard-grid-line" x1={pad.left} x2={width - pad.right} y1={y(tick)} y2={y(tick)} />)}
+            {min < 0 && max > 0 && <line className="dashboard-zero-line" x1={pad.left} x2={width - pad.right} y1={y(0)} y2={y(0)} />}
+            {areaPath && <path d={areaPath} fill={`url(#${gradientId})`} />}
+            {points.length > 1 && <path className="dashboard-history-line" d={linePath} />}
+            {points.length === 1 && <circle className="dashboard-endpoint" cx={x(points[0].date)} cy={y(points[0].value)} r="4" />}
+            {active && <><line className="dashboard-crosshair" x1={x(active.date)} x2={x(active.date)} y1={pad.top} y2={height - pad.bottom} /><circle className="dashboard-active-point" cx={x(active.date)} cy={y(active.value)} r="5" /></>}
+          </svg>
+          {active && <div className={`dashboard-chart-tooltip${activeIndex === 0 ? ' start' : activeIndex === points.length - 1 ? ' end' : ''}`} style={{ left: `${x(active.date) / width * 100}%`, top: `${y(active.value) / height * 100}%` }} aria-live="polite"><time>{chartDate.format(new Date(`${active.date}T12:00:00`))}</time><strong>{czk.format(active.value)}</strong></div>}
+        </div>
+      </div>
+      <div className="dashboard-x-axis" aria-hidden="true">{dateIndexes.map((index) => <time className={index === 0 ? 'start' : index === points.length - 1 ? 'end' : undefined} style={{ left: `${x(points[index].date) / width * 100}%` }} key={points[index].date}>{chartDate.format(new Date(`${points[index].date}T12:00:00`))}</time>)}</div>
     </div>
-    <div className="dashboard-x-axis" aria-hidden="true">{dateIndexes.map((index) => <time key={points[index].date}>{chartDate.format(new Date(`${points[index].date}T12:00:00`))}</time>)}</div>
     {fetching && <span className="dashboard-chart-refresh" role="status">Aktualizuji…</span>}
   </div>
 }
