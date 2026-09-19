@@ -30,3 +30,7 @@
 .dashboard-income-output>span:nth-child(2),.dashboard-income-output strong{align-self:end;line-height:1.2}
 .dashboard-income-output strong{text-align:right;white-space:nowrap}
 .dashboard-income-output b{align-self:start;line-height:1.2}
+.dashboard-income-card{padding:0}
+.dashboard-income-card-icon{border-color:color-mix(in srgb,#4f91ff 34%,transparent);color:#4f91ff;background:color-mix(in srgb,#4f91ff 8%,transparent)}
+.dashboard-income-input{margin:16px 16px 0}
+.dashboard-income-outputs{margin:14px 16px 0}

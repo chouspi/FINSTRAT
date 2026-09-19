@@ -1,7 +1,7 @@
 import { useId, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowDownRight, ArrowUpRight, Bitcoin, ChevronRight, CircleGauge, Landmark, PiggyBank, RefreshCw, TrendingUp, Wallet } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Banknote, Bitcoin, ChevronRight, CircleGauge, Landmark, PiggyBank, RefreshCw, TrendingUp, Wallet } from 'lucide-react'
 import { apiRequest } from '../lib/api'
 import { calculateIncomeAllocation, formatCzkInput, parseCzkInput } from '../lib/incomePlan'
 import type { StrategyOverview } from '../lib/strategy'
@@ -221,6 +221,7 @@ function IncomeCalculator({ data }: { data: IncomeOverview }) {
     { label: 'Spending účet', amount: allocation.cashAmount, icon: Wallet, tone: 'cash' },
   ].filter((row) => row.label !== 'Dluhy' || row.amount > .005)
   return <section className="dashboard-focus-card dashboard-income-card" aria-label="Income plán">
+    <div className="dashboard-card-header"><span className="dashboard-card-icon dashboard-income-card-icon"><Banknote size={18} /></span><div><strong>Income plán</strong><small>Rozdělení příjmu podle plánu</small></div></div>
     <label className="dashboard-income-input"><span>Částka k rozdělení</span><div><input aria-label="Částka k rozdělení" inputMode="decimal" value={capital} onChange={(event) => setCapital(formatCzkInput(event.target.value))} /><b>Kč</b></div></label>
     <div className="dashboard-income-outputs">
       {rows.map((row) => {
