@@ -384,6 +384,7 @@ describe("DashboardPage", () => {
     const strategyCard = await screen.findByRole("region", { name: "BTC strategie" });
     const transferButton = await within(strategyCard).findByRole("button", { name: "PŘEVÉST" });
     expect(within(strategyCard).getByText("100 %")).toBeInTheDocument();
+    expect(within(strategyCard).getByText(/50[  ]000[  ]Kč \/ 25[  ]000[  ]Kč/)).toBeInTheDocument();
     const rentCard = screen.getByRole("button", { name: /VGLA renta/ });
     expect(within(rentCard).getByText(/Měsíčně/)).toBeInTheDocument();
     const incomeCard = screen.getByRole("region", { name: "Income plán" });

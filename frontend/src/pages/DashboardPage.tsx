@@ -190,7 +190,7 @@ function StrategyCard({ data, loading, error, onClick }: { data?: StrategyOvervi
         : <strong className={error ? 'negative' : undefined}>{recommendation}</strong>}
     </div>
     <div className="dashboard-strategy-progress">
-      <strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong>
+      <span className="dashboard-strategy-ratio"><span>{valid ? `${czk.format(data.profitCzk)} / ${czk.format(data.triggerCzk)}` : '— / —'}</span><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></span>
       <div><span style={{ width: `${progress}%` }} /></div>
     </div>
   </section>
