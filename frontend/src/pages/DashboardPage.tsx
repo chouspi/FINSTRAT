@@ -219,7 +219,7 @@ function IncomeCalculator({ data }: { data: IncomeOverview }) {
     { label: 'Bitcoin', amount: allocation.btcAmount, icon: Bitcoin, tone: 'btc' },
     { label: 'Dluhy', amount: allocation.debtBudget + allocation.scheduledApplied, icon: Landmark, tone: 'debt' },
     { label: 'Spending účet', amount: allocation.cashAmount, icon: Wallet, tone: 'cash' },
-  ]
+  ].filter((row) => row.label !== 'Dluhy' || row.amount > .005)
   return <section className="dashboard-focus-card dashboard-income-card" aria-label="Income plán">
     <label className="dashboard-income-input"><span>Částka k rozdělení</span><div><input aria-label="Částka k rozdělení" inputMode="decimal" value={capital} onChange={(event) => setCapital(formatCzkInput(event.target.value))} /><b>Kč</b></div></label>
     <div className="dashboard-income-outputs">
