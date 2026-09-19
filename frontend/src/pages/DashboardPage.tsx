@@ -1,8 +1,9 @@
 import { useId, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowDownRight, ArrowUpRight, ChevronRight, CircleGauge, PiggyBank, RefreshCw, TrendingUp } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Bitcoin, ChevronRight, CircleGauge, Landmark, PiggyBank, RefreshCw, TrendingUp, Wallet } from 'lucide-react'
 import { apiRequest } from '../lib/api'
+import { calculateIncomeAllocation, formatCzkInput, parseCzkInput } from '../lib/incomePlan'
 import type { StrategyOverview } from '../lib/strategy'
 import type { WealthTrendInput } from '../lib/wealthTrend'
 import './DashboardPage.css'
@@ -16,6 +17,19 @@ type WealthPoint = WealthTrendInput & {
 type WealthHistory = { current: WealthPoint | null; points: WealthPoint[] }
 type VglaOverview = { totals: { shares: number; rentRatePercent: number; rentPoolCzk: number } }
 type VglaPrice = { priceCzk: number; isStale: boolean }
+type IncomeOverview = {
+  settings: {
+    defaultCapitalCzk: number
+    withoutDebtBtcPercent: number
+    withoutDebtCashPercent: number
+    withDebtBtcPercent: number
+    withDebtDebtPercent: number
+    withDebtCashPercent: number
+    deferredDebtPaymentCzk?: number
+  }
+  debts: { id: string; priority?: number; balanceCzk: number }[]
+  scheduledDebtPaymentCzk?: number
+}
 type Timeframe = '1m' | '3m' | '1y' | 'all'
 
 const TIMEFRAMES: { key: Timeframe; label: string; days: number }[] = [
@@ -39,6 +53,7 @@ export function DashboardPage() {
     retry: false,
   })
   const strategy = useQuery({ queryKey: ['strategy', 'overview'], queryFn: () => apiRequest<StrategyOverview>('/api/strategy/overview'), retry: false })
+  const income = useQuery({ queryKey: ['income-plan', 'overview'], queryFn: () => apiRequest<IncomeOverview>('/api/income-plan/overview'), retry: false })
   const vgla = useQuery({ queryKey: ['vgla', 'overview'], queryFn: () => apiRequest<VglaOverview>('/api/vgla/overview'), retry: false })
   const vglaPrice = useQuery({ queryKey: ['market-data', 'vgla-price'], queryFn: () => apiRequest<VglaPrice>('/api/market-data/vgla-price'), retry: false })
   const points = normalizePoints(wealth.data?.points)
@@ -69,6 +84,7 @@ export function DashboardPage() {
       </section>
       <div className="dashboard-focus-grid">
         <StrategyCard data={strategy.data} loading={strategy.isPending} error={strategy.isError} onClick={() => void navigate({ to: '/strategy' })} />
+        <IncomeCard data={income.data} loading={income.isPending} />
         <RentCard overview={vgla.data} price={vglaPrice.data} loading={vgla.isPending || vglaPrice.isPending} error={vgla.isError || vglaPrice.isError} onClick={() => void navigate({ to: '/vgla', search: { dialog: undefined } })} />
       </div>
     </div>
@@ -170,6 +186,55 @@ function StrategyCard({ data, loading, error, onClick }: { data?: StrategyOvervi
     <div className="dashboard-strategy-progress"><div><span style={{ width: `${valid ? Math.min(100, Math.max(0, data.progressPercent)) : 0}%` }} /></div><small>{valid ? `Trigger ${czk.format(data.triggerCzk)}` : 'Trigger'}</small><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></div>
     {valid && data.recommendedTransferCzk > 0 && <p>Připraveno k přesunu do VGLA <b>{czk.format(data.recommendedTransferCzk)}</b></p>}
   </button>
+}
+
+function IncomeCard({ data, loading }: { data?: IncomeOverview; loading: boolean }) {
+  if (loading || !data?.settings || !Array.isArray(data.debts) || !Number.isFinite(data.settings.defaultCapitalCzk)) return <section className="dashboard-focus-card dashboard-income-card dashboard-income-loading" aria-label="Income plán" />
+  return <IncomeCalculator key={data.settings.defaultCapitalCzk} data={data} />
+}
+
+function IncomeCalculator({ data }: { data: IncomeOverview }) {
+  const [capital, setCapital] = useState(() => formatCzkInput(String(data.settings.defaultCapitalCzk || '')))
+  const parsedCapital = parseCzkInput(capital)
+  const amount = Number.isFinite(parsedCapital) && parsedCapital >= 0 ? parsedCapital : 0
+  const hasDebts = data.debts.some((debt) => debt.balanceCzk > 0)
+  const percentages = hasDebts
+    ? { btc: data.settings.withDebtBtcPercent, debt: data.settings.withDebtDebtPercent, cash: data.settings.withDebtCashPercent }
+    : { btc: data.settings.withoutDebtBtcPercent, debt: 0, cash: data.settings.withoutDebtCashPercent }
+  const allocation = calculateIncomeAllocation(
+    amount,
+    data.scheduledDebtPaymentCzk ?? 0,
+    data.settings.deferredDebtPaymentCzk ?? 0,
+    percentages.btc,
+    percentages.debt,
+    percentages.cash,
+    hasDebts,
+    {
+      totalDebtBalanceCzk: data.debts.reduce((sum, debt) => sum + Math.max(0, debt.balanceCzk), 0),
+      withoutDebtBtcPercent: data.settings.withoutDebtBtcPercent,
+      withoutDebtCashPercent: data.settings.withoutDebtCashPercent,
+    },
+  )
+  const rows = [
+    { label: 'Bitcoin', amount: allocation.btcAmount, icon: Bitcoin, tone: 'btc' },
+    { label: 'Dluhy', amount: allocation.debtBudget + allocation.scheduledApplied, icon: Landmark, tone: 'debt' },
+    { label: 'Spending účet', amount: allocation.cashAmount, icon: Wallet, tone: 'cash' },
+  ]
+  return <section className="dashboard-focus-card dashboard-income-card" aria-label="Income plán">
+    <label className="dashboard-income-input"><span>Částka k rozdělení</span><div><input aria-label="Částka k rozdělení" inputMode="decimal" value={capital} onChange={(event) => setCapital(formatCzkInput(event.target.value))} /><b>Kč</b></div></label>
+    <div className="dashboard-income-outputs">
+      {rows.map((row) => {
+        const Icon = row.icon
+        const percent = amount > 0 ? row.amount / amount * 100 : 0
+        return <output className={`dashboard-income-output ${row.tone}`} key={row.label}>
+          <span className="dashboard-income-icon"><Icon size={16} /></span>
+          <span>{row.label}</span>
+          <strong>{czk.format(row.amount)}</strong>
+          <b>{new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 1 }).format(percent)} %</b>
+        </output>
+      })}
+    </div>
+  </section>
 }
 
 function RentCard({ overview, price, loading, error, onClick }: { overview?: VglaOverview; price?: VglaPrice; loading: boolean; error: boolean; onClick: () => void }) {

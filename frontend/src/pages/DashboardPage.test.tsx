@@ -367,7 +367,7 @@ describe("DashboardPage", () => {
     expect(screen.queryByText("Základní scénář za 12 měsíců")).not.toBeInTheDocument();
   });
 
-  it("renders only the strategy and VGLA rent cards and links to their details", async () => {
+  it("renders strategy, compact Income calculator and VGLA rent cards", async () => {
     const user = userEvent.setup();
     const router = createTestRouter("/");
     await router.load();
@@ -386,7 +386,15 @@ describe("DashboardPage", () => {
     expect(within(strategyCard).getByText(/Připraveno k přesunu do VGLA/)).toBeInTheDocument();
     const rentCard = screen.getByRole("button", { name: /VGLA renta/ });
     expect(within(rentCard).getByText("Měsíční renta")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Income plán/ })).not.toBeInTheDocument();
+    const incomeCard = screen.getByRole("region", { name: "Income plán" });
+    const capitalInput = within(incomeCard).getByRole("textbox", { name: "Částka k rozdělení" });
+    expect(capitalInput).toHaveValue("21 600");
+    expect(within(incomeCard).getByText("Bitcoin")).toBeInTheDocument();
+    expect(within(incomeCard).getByText("Dluhy")).toBeInTheDocument();
+    expect(within(incomeCard).getByText("Spending účet")).toBeInTheDocument();
+    expect(within(incomeCard).getByText(/14[  ]525[  ]Kč/)).toBeInTheDocument();
+    expect(within(incomeCard).getByText(/5[  ]000[  ]Kč/)).toBeInTheDocument();
+    expect(within(incomeCard).getByText(/2[  ]075[  ]Kč/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /BTC účty/ })).not.toBeInTheDocument();
 
     await user.click(strategyCard);
