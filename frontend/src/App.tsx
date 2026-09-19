@@ -86,7 +86,6 @@ const pageHeadings: Record<string, string> = {
   '/debts': 'Dluhy',
   '/taxes': 'Daně',
   '/settings': 'Nastavení',
-  '/last-day-i-gambled': 'Připomínka',
 }
 
 const usdFormatter = new Intl.NumberFormat('en-US', {
@@ -361,7 +360,6 @@ function App() {
               <Menu size={19} />
             </button>
             {signedInUser && (<>
-              <Link className="roulette-link" to="/last-day-i-gambled" aria-label="Otevřít Last day I gambled" title="Last day I gambled"><span aria-hidden="true"><i /></span></Link>
               <div className="signed-in-user">
                 <button
                   className="user-avatar"
