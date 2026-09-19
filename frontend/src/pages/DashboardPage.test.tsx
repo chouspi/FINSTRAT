@@ -328,8 +328,7 @@ describe("DashboardPage", () => {
     expect(screen.getByText(/Odhad dluhu na konci období/)).toBeInTheDocument();
   });
 
-  it("switches between the fixed net-worth and trend charts", async () => {
-    const user = userEvent.setup();
+  it("renders a full-width net-worth chart without trend or range controls", async () => {
     const router = createTestRouter("/");
     await router.load();
     render(
@@ -342,15 +341,11 @@ describe("DashboardPage", () => {
       </QueryClientProvider>,
     );
 
-    const netTab = await screen.findByRole("tab", { name: "Čisté jmění" });
-    expect(netTab).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("Čisté jmění", { selector: ".dashboard-panel-header > span" })).toBeInTheDocument();
     expect(await screen.findByRole("img", { name: "Vývoj čistého jmění" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "1M" })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("tab", { name: "Trend" }));
-    expect(screen.getByRole("tab", { name: "Trend" })).toHaveAttribute("aria-selected", "true");
-    expect(await screen.findByRole("img", { name: "Historie a základní trend čistého jmění" })).toBeInTheDocument();
-    expect(screen.getByText("Základní scénář za 12 měsíců")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Trend" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Základní scénář za 12 měsíců")).not.toBeInTheDocument();
   });
 
   it("renders only the strategy and VGLA rent cards and links to their details", async () => {

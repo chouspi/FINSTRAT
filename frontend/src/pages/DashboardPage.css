@@ -29,15 +29,6 @@
   justify-content: space-between;
 }
 
-.dashboard-chart-tabs {
-  display: inline-flex;
-  gap: .2rem;
-  padding: .25rem;
-  border-radius: 12px;
-  background: var(--surface-soft);
-}
-
-.dashboard-chart-tabs button,
 .dashboard-wealth-link {
   border: 0;
   color: var(--text-muted);
@@ -46,18 +37,12 @@
   cursor: pointer;
 }
 
-.dashboard-chart-tabs button {
-  min-height: 36px;
-  padding: 0 .85rem;
-  border-radius: 9px;
-  font-size: .82rem;
+.dashboard-panel-header > span {
+  color: var(--text-muted);
+  font-size: .74rem;
   font-weight: 750;
-}
-
-.dashboard-chart-tabs button.active {
-  color: var(--text);
-  background: var(--surface);
-  box-shadow: 0 1px 4px rgb(15 23 42 / 9%);
+  letter-spacing: .04em;
+  text-transform: uppercase;
 }
 
 .dashboard-wealth-link {
@@ -71,19 +56,16 @@
 
 .dashboard-chart-content {
   display: grid;
-  grid-template-columns: minmax(230px, .72fr) minmax(0, 1.8fr);
-  align-items: end;
-  gap: 2rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .8rem;
   min-height: 365px;
-  padding-top: 1.7rem;
+  padding-top: .7rem;
 }
 
 .dashboard-chart-copy {
-  align-self: center;
-  padding: 0 0 1.5rem .3rem;
+  padding: 0 .3rem;
 }
 
-.dashboard-chart-copy > span,
 .dashboard-card-primary > span,
 .dashboard-rent-footer span {
   color: var(--text-muted);
@@ -96,7 +78,7 @@
 .dashboard-chart-copy > strong {
   display: block;
   margin: .48rem 0 .3rem;
-  font-size: clamp(2rem, 4vw, 3.6rem);
+  font-size: clamp(2rem, 4vw, 3.25rem);
   line-height: .98;
   letter-spacing: -.065em;
   font-variant-numeric: tabular-nums;
@@ -110,8 +92,8 @@
 }
 
 .dashboard-chart-copy > p {
-  max-width: 34ch;
-  margin: 1.3rem 0 0;
+  max-width: none;
+  margin: .7rem 0 0;
   color: var(--text-muted);
   font-size: .8rem;
   line-height: 1.55;
@@ -142,23 +124,10 @@
   stroke-width: 2.5;
 }
 
-.dashboard-projection-line {
-  stroke: var(--amber, #c78b2b);
-  stroke-width: 2.25;
-  stroke-dasharray: 7 7;
-}
-
 .dashboard-chart-axis {
   padding-top: .45rem;
   color: var(--text-muted);
   font-size: .68rem;
-}
-
-.dashboard-chart-axis b {
-  color: var(--amber, #a66f16);
-  font-size: .64rem;
-  letter-spacing: .08em;
-  text-transform: uppercase;
 }
 
 .dashboard-chart-scale {
@@ -210,7 +179,6 @@
 }
 
 .dashboard-focus-card:focus-visible,
-.dashboard-chart-tabs button:focus-visible,
 .dashboard-wealth-link:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--green) 30%, transparent);
   outline-offset: 2px;
@@ -309,7 +277,6 @@
   }
 
   .dashboard-chart-content {
-    grid-template-columns: 1fr;
     gap: .5rem;
     min-height: 0;
     padding-top: 1.25rem;
@@ -343,10 +310,6 @@
 
   .dashboard-wealth-link {
     padding-right: 0;
-  }
-
-  .dashboard-chart-tabs button {
-    padding-inline: .65rem;
   }
 
   .dashboard-chart-copy > strong {

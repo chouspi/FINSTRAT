@@ -1,10 +1,10 @@
-import { useId, useState } from 'react'
+import { useId } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight, CircleGauge, PiggyBank } from 'lucide-react'
 import { apiRequest } from '../lib/api'
 import type { StrategyOverview } from '../lib/strategy'
-import { calculateWealthTrend, type WealthTrend, type WealthTrendInput } from '../lib/wealthTrend'
+import type { WealthTrendInput } from '../lib/wealthTrend'
 import './DashboardPage.css'
 
 type WealthPoint = WealthTrendInput & {
@@ -14,10 +14,8 @@ type WealthPoint = WealthTrendInput & {
   mortgageDebtCzk: number
 }
 type WealthHistory = { current: WealthPoint | null; points: WealthPoint[] }
-type DebtOverview = { scheduledPayments?: { effectiveAt: string; amountCzk: number; isScheduled: boolean }[] }
 type VglaOverview = { totals: { shares: number; rentRatePercent: number; rentPoolCzk: number } }
 type VglaPrice = { priceCzk: number; isStale: boolean }
-type ChartView = 'net' | 'trend'
 
 const czk = new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })
 const compactCzk = new Intl.NumberFormat('cs-CZ', { notation: 'compact', style: 'currency', currency: 'CZK', maximumFractionDigits: 1 })
@@ -25,29 +23,20 @@ const shortDate = new Intl.DateTimeFormat('cs-CZ', { month: 'short', year: 'nume
 
 export function DashboardPage() {
   const navigate = useNavigate()
-  const [chartView, setChartView] = useState<ChartView>('net')
   const wealth = useQuery({ queryKey: ['wealth', 'history', 3650], queryFn: () => apiRequest<WealthHistory>('/api/wealth/history?days=3650'), retry: false })
-  const debts = useQuery({ queryKey: ['debts', 'overview'], queryFn: () => apiRequest<DebtOverview>('/api/debts/overview'), retry: false })
   const strategy = useQuery({ queryKey: ['strategy', 'overview'], queryFn: () => apiRequest<StrategyOverview>('/api/strategy/overview'), retry: false })
   const vgla = useQuery({ queryKey: ['vgla', 'overview'], queryFn: () => apiRequest<VglaOverview>('/api/vgla/overview'), retry: false })
   const vglaPrice = useQuery({ queryKey: ['market-data', 'vgla-price'], queryFn: () => apiRequest<VglaPrice>('/api/market-data/vgla-price'), retry: false })
   const points = normalizePoints(wealth.data?.points)
   const current = points.at(-1) ?? null
-  const scheduledPayments = (debts.data?.scheduledPayments ?? []).filter((payment) => payment.isScheduled)
-  const trend = calculateWealthTrend(points, 1, scheduledPayments)
 
   return <section className="dashboard-page">
     <section className="dashboard-chart-panel" aria-labelledby="dashboard-chart-title">
       <div className="dashboard-panel-header">
-        <div className="dashboard-chart-tabs" role="tablist" aria-label="Graf dashboardu">
-          <button type="button" role="tab" aria-selected={chartView === 'net'} className={chartView === 'net' ? 'active' : undefined} onClick={() => setChartView('net')}>Čisté jmění</button>
-          <button type="button" role="tab" aria-selected={chartView === 'trend'} className={chartView === 'trend' ? 'active' : undefined} onClick={() => setChartView('trend')}>Trend</button>
-        </div>
-        <button className="dashboard-wealth-link" type="button" onClick={() => void navigate({ to: '/wealth', search: { tab: chartView === 'net' ? 'net' : 'trend' } })}>Detail <ChevronRight size={14} /></button>
+        <span id="dashboard-chart-title">Čisté jmění</span>
+        <button className="dashboard-wealth-link" type="button" onClick={() => void navigate({ to: '/wealth', search: { tab: 'net' } })}>Detail <ChevronRight size={14} /></button>
       </div>
-      {chartView === 'net'
-        ? <NetWorthView points={points} current={current} loading={wealth.isPending} error={wealth.isError} />
-        : <TrendView trend={trend} loading={wealth.isPending} error={wealth.isError} />}
+      <NetWorthView points={points} current={current} loading={wealth.isPending} error={wealth.isError} />
     </section>
     <div className="dashboard-focus-grid">
       <StrategyCard data={strategy.data} loading={strategy.isPending} error={strategy.isError} onClick={() => void navigate({ to: '/strategy' })} />
@@ -61,31 +50,11 @@ function NetWorthView({ points, current, loading, error }: { points: WealthPoint
   const change = current && first ? current.trackedNetWorthCzk! - first.trackedNetWorthCzk! : null
   return <div className="dashboard-chart-content">
     <div className="dashboard-chart-copy">
-      <span id="dashboard-chart-title">Čisté jmění</span>
       <strong className={(current?.trackedNetWorthCzk ?? 0) < 0 ? 'negative' : undefined}>{current ? czk.format(current.trackedNetWorthCzk!) : '—'}</strong>
       <small>{change === null ? 'Historie zatím není dostupná' : `${change >= 0 ? '+' : ''}${czk.format(change)} za celé sledované období`}</small>
       <p>Aktiva minus spotřebitelské dluhy. Hypotéka se do této metriky nezapočítává.</p>
     </div>
     <DashboardChart history={points.map((point) => ({ date: point.date, value: point.trackedNetWorthCzk! }))} ariaLabel="Vývoj čistého jmění" loading={loading} error={error} />
-  </div>
-}
-
-function TrendView({ trend, loading, error }: { trend: WealthTrend | null; loading: boolean; error: boolean }) {
-  const projected = trend?.projection.at(-1)
-  return <div className="dashboard-chart-content">
-    <div className="dashboard-chart-copy">
-      <span id="dashboard-chart-title">Základní scénář za 12 měsíců</span>
-      <strong>{projected ? czk.format(projected.netWorthCzk) : '—'}</strong>
-      <small>{trend?.hasReliableHistory ? `${czk.format(trend.annualContributionCzk)} roční tempo vkladů` : 'Pro spolehlivý odhad je potřeba alespoň 90 dní historie'}</small>
-      <p>Bez předpokládaného tržního zhodnocení. Odhad vychází z dosavadních vkladů, výběrů a naplánovaných splátek.</p>
-    </div>
-    <DashboardChart
-      history={(trend?.history ?? []).map((point) => ({ date: point.date, value: point.netWorthCzk }))}
-      projection={(trend?.projection ?? []).map((point) => ({ date: point.date, value: point.netWorthCzk }))}
-      ariaLabel="Historie a základní trend čistého jmění"
-      loading={loading}
-      error={error}
-    />
   </div>
 }
 
