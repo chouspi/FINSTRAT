@@ -1,7 +1,7 @@
-import { useId } from 'react'
+import { useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronRight, CircleGauge, PiggyBank } from 'lucide-react'
+import { ChevronRight, CircleGauge, PiggyBank, RefreshCw, TrendingUp } from 'lucide-react'
 import { apiRequest } from '../lib/api'
 import type { StrategyOverview } from '../lib/strategy'
 import type { WealthTrendInput } from '../lib/wealthTrend'
@@ -16,75 +16,128 @@ type WealthPoint = WealthTrendInput & {
 type WealthHistory = { current: WealthPoint | null; points: WealthPoint[] }
 type VglaOverview = { totals: { shares: number; rentRatePercent: number; rentPoolCzk: number } }
 type VglaPrice = { priceCzk: number; isStale: boolean }
+type Timeframe = '1m' | '3m' | '1y' | 'all'
+
+const TIMEFRAMES: { key: Timeframe; label: string; days: number; period: string }[] = [
+  { key: '1m', label: '1M', days: 30, period: 'za poslední měsíc' },
+  { key: '3m', label: '3M', days: 90, period: 'za poslední 3 měsíce' },
+  { key: '1y', label: '1R', days: 365, period: 'za poslední rok' },
+  { key: 'all', label: 'Vše', days: 3650, period: 'za celé sledované období' },
+]
 
 const czk = new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 })
 const compactCzk = new Intl.NumberFormat('cs-CZ', { notation: 'compact', style: 'currency', currency: 'CZK', maximumFractionDigits: 1 })
-const shortDate = new Intl.DateTimeFormat('cs-CZ', { month: 'short', year: 'numeric' })
+const chartDate = new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'short', year: 'numeric' })
 
 export function DashboardPage() {
   const navigate = useNavigate()
-  const wealth = useQuery({ queryKey: ['wealth', 'history', 30], queryFn: () => apiRequest<WealthHistory>('/api/wealth/history?days=30'), retry: false })
+  const [timeframe, setTimeframe] = useState<Timeframe>('1m')
+  const selectedTimeframe = TIMEFRAMES.find((item) => item.key === timeframe)!
+  const wealth = useQuery({
+    queryKey: ['wealth', 'history', selectedTimeframe.days],
+    queryFn: () => apiRequest<WealthHistory>(`/api/wealth/history?days=${selectedTimeframe.days}`),
+    retry: false,
+  })
   const strategy = useQuery({ queryKey: ['strategy', 'overview'], queryFn: () => apiRequest<StrategyOverview>('/api/strategy/overview'), retry: false })
   const vgla = useQuery({ queryKey: ['vgla', 'overview'], queryFn: () => apiRequest<VglaOverview>('/api/vgla/overview'), retry: false })
   const vglaPrice = useQuery({ queryKey: ['market-data', 'vgla-price'], queryFn: () => apiRequest<VglaPrice>('/api/market-data/vgla-price'), retry: false })
   const points = normalizePoints(wealth.data?.points)
 
   return <section className="dashboard-page">
-    <section className="dashboard-chart-panel" aria-labelledby="dashboard-chart-title">
-      <div className="dashboard-panel-header">
-        <span id="dashboard-chart-title">Čisté jmění</span>
-        <button className="dashboard-wealth-link" type="button" onClick={() => void navigate({ to: '/wealth', search: { tab: 'net' } })}>Detail <ChevronRight size={14} /></button>
+    <div className="dashboard-content">
+      <section className="dashboard-chart-panel" aria-labelledby="dashboard-chart-title">
+        <div className="dashboard-panel-header">
+          <div className="dashboard-heading-copy">
+            <span className="dashboard-heading-icon"><TrendingUp size={19} /></span>
+            <div><h2 id="dashboard-chart-title">Čisté jmění</h2><p>Aktiva po odečtení spotřebitelských dluhů</p></div>
+          </div>
+          <button className="dashboard-wealth-link" type="button" onClick={() => void navigate({ to: '/wealth', search: { tab: 'net' } })}>Detail <ChevronRight size={14} /></button>
+        </div>
+        <div className="dashboard-chart-toolbar">
+          <NetWorthSummary points={points} period={selectedTimeframe.period} loading={wealth.isPending} />
+          <div className="dashboard-timeframes" role="group" aria-label="Období grafu">
+            {TIMEFRAMES.map((item) => <button key={item.key} type="button" className={timeframe === item.key ? 'active' : undefined} aria-pressed={timeframe === item.key} onClick={() => setTimeframe(item.key)}>{item.label}</button>)}
+          </div>
+        </div>
+        <DashboardChart history={points.map((point) => ({ date: point.date, value: point.trackedNetWorthCzk! }))} loading={wealth.isPending} fetching={wealth.isFetching} error={wealth.isError} onRetry={() => void wealth.refetch()} />
+      </section>
+      <div className="dashboard-focus-grid">
+        <StrategyCard data={strategy.data} loading={strategy.isPending} error={strategy.isError} onClick={() => void navigate({ to: '/strategy' })} />
+        <RentCard overview={vgla.data} price={vglaPrice.data} loading={vgla.isPending || vglaPrice.isPending} error={vgla.isError || vglaPrice.isError} onClick={() => void navigate({ to: '/vgla', search: { dialog: undefined } })} />
       </div>
-      <NetWorthView points={points} loading={wealth.isPending} error={wealth.isError} />
-    </section>
-    <div className="dashboard-focus-grid">
-      <StrategyCard data={strategy.data} loading={strategy.isPending} error={strategy.isError} onClick={() => void navigate({ to: '/strategy' })} />
-      <RentCard overview={vgla.data} price={vglaPrice.data} loading={vgla.isPending || vglaPrice.isPending} error={vgla.isError || vglaPrice.isError} onClick={() => void navigate({ to: '/vgla', search: { dialog: undefined } })} />
     </div>
   </section>
 }
 
-function NetWorthView({ points, loading, error }: { points: WealthPoint[]; loading: boolean; error: boolean }) {
+function NetWorthSummary({ points, period, loading }: { points: WealthPoint[]; period: string; loading: boolean }) {
   const first = points[0]
   const current = points.at(-1)
   const change = current && first ? current.trackedNetWorthCzk! - first.trackedNetWorthCzk! : null
-  return <div className="dashboard-chart-content">
-    <div className="dashboard-chart-copy">
-      <strong className={change === null ? undefined : change > 0 ? 'positive' : 'negative'}>{change === null ? '—' : `${change > 0 ? '+' : ''}${czk.format(change)}`}</strong>
-      <small>{change === null ? 'Historie zatím není dostupná' : 'za poslední měsíc'}</small>
-    </div>
-    <DashboardChart history={points.map((point) => ({ date: point.date, value: point.trackedNetWorthCzk! }))} ariaLabel="Vývoj čistého jmění" loading={loading} error={error} />
+  if (loading) return <div className="dashboard-chart-summary dashboard-chart-summary--loading" aria-label="Načítám změnu čistého jmění" />
+  return <div className="dashboard-chart-summary">
+    <strong className={change === null ? undefined : change > 0 ? 'positive' : 'negative'}>{change === null ? '—' : `${change > 0 ? '+' : ''}${czk.format(change)}`}</strong>
+    <small>{change === null ? 'Pro výpočet změny chybí historie' : period}</small>
   </div>
 }
 
-function DashboardChart({ history, projection = [], ariaLabel, loading, error }: { history: { date: string; value: number }[]; projection?: { date: string; value: number }[]; ariaLabel: string; loading: boolean; error: boolean }) {
+function DashboardChart({ history, loading, fetching, error, onRetry }: { history: { date: string; value: number }[]; loading: boolean; fetching: boolean; error: boolean; onRetry: () => void }) {
   const gradientId = useId().replaceAll(':', '')
-  const all = [...history, ...projection.slice(1)].filter((point) => Number.isFinite(point.value) && Number.isFinite(Date.parse(`${point.date}T00:00:00Z`)))
-  if (loading) return <div className="dashboard-chart-state" role="status">Načítám historii…</div>
-  if (error) return <div className="dashboard-chart-state error" role="alert">Historii se nepodařilo načíst.</div>
-  if (history.length < 2 || all.length < 2) return <div className="dashboard-chart-state">Pro graf zatím není dost záznamů.</div>
-  const width = 900, height = 250, padX = 18, padY = 18
-  const times = all.map((point) => Date.parse(`${point.date}T00:00:00Z`))
-  const values = all.map((point) => point.value)
-  const minTime = Math.min(...times), maxTime = Math.max(...times)
+  const frameRef = useRef<HTMLDivElement>(null)
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+  const points = history.filter((point) => Number.isFinite(point.value) && validDate(point.date))
+  if (loading) return <div className="dashboard-chart-state dashboard-chart-skeleton" role="status" aria-label="Načítám historii" />
+  if (error) return <div className="dashboard-chart-state error" role="alert"><RefreshCw size={18} /><strong>Historii se nepodařilo načíst</strong><button type="button" onClick={onRetry}>Zkusit znovu</button></div>
+  if (points.length === 0) return <div className="dashboard-chart-state"><TrendingUp size={20} /><strong>Zatím není co zobrazit</strong><span>Graf se objeví po prvním záznamu čistého jmění.</span></div>
+
+  const width = 960, height = 290, pad = { top: 18, right: 10, bottom: 18, left: 10 }
+  const times = points.map((point) => Date.parse(`${point.date}T00:00:00Z`))
+  const values = points.map((point) => point.value)
   const rawMin = Math.min(...values), rawMax = Math.max(...values)
-  const spread = Math.max(rawMax - rawMin, Math.abs(rawMax) * .08, 1)
-  const min = rawMin - spread * .12, max = rawMax + spread * .12
-  const x = (date: string) => padX + (Date.parse(`${date}T00:00:00Z`) - minTime) / Math.max(1, maxTime - minTime) * (width - padX * 2)
-  const y = (value: number) => height - padY - (value - min) / (max - min) * (height - padY * 2)
-  const path = (items: { date: string; value: number }[]) => items.map((point, index) => `${index === 0 ? 'M' : 'L'} ${x(point.date)} ${y(point.value)}`).join(' ')
-  const historyPath = path(history)
-  const projectionPath = projection.length > 1 ? path(projection) : ''
-  const area = `${historyPath} L ${x(history.at(-1)!.date)} ${height - padY} L ${x(history[0].date)} ${height - padY} Z`
-  return <div className="dashboard-chart-visual">
-    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={ariaLabel}>
-      <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--green)" stopOpacity=".2"/><stop offset="1" stopColor="var(--green)" stopOpacity="0"/></linearGradient></defs>
-      <path className="dashboard-chart-area" d={area} fill={`url(#${gradientId})`} />
-      <path className="dashboard-history-line" d={historyPath} />
-      {projectionPath && <path className="dashboard-projection-line" d={projectionPath} />}
-    </svg>
-    <div className="dashboard-chart-axis"><span>{shortDate.format(new Date(`${all[0].date}T12:00:00`))}</span>{projectionPath && <b>Odhad</b>}<span>{shortDate.format(new Date(`${all.at(-1)!.date}T12:00:00`))}</span></div>
-    <div className="dashboard-chart-scale"><span>{compactCzk.format(rawMax)}</span><span>{compactCzk.format(rawMin)}</span></div>
+  const valueSpread = Math.max(rawMax - rawMin, Math.abs(rawMax) * .08, 1)
+  const min = rawMin - valueSpread * .14, max = rawMax + valueSpread * .14
+  const minTime = Math.min(...times), maxTime = Math.max(...times)
+  const x = (date: string) => points.length === 1 ? width / 2 : pad.left + (Date.parse(`${date}T00:00:00Z`) - minTime) / Math.max(1, maxTime - minTime) * (width - pad.left - pad.right)
+  const y = (value: number) => height - pad.bottom - (value - min) / (max - min) * (height - pad.top - pad.bottom)
+  const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${x(point.date)} ${y(point.value)}`).join(' ')
+  const areaPath = points.length > 1 ? `${linePath} L ${x(points.at(-1)!.date)} ${height - pad.bottom} L ${x(points[0].date)} ${height - pad.bottom} Z` : ''
+  const tickValues = Array.from({ length: 4 }, (_, index) => min + (max - min) * index / 3).reverse()
+  const dateIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])]
+  const change = points.at(-1)!.value - points[0].value
+  const tone = change > 0 ? 'positive' : 'negative'
+  const active = activeIndex === null ? null : points[activeIndex]
+
+  const selectFromPointer = (event: PointerEvent<HTMLDivElement>) => {
+    const rect = frameRef.current?.getBoundingClientRect()
+    if (!rect || rect.width === 0) return
+    const pointerTime = minTime + Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * Math.max(1, maxTime - minTime)
+    let closest = 0
+    for (let index = 1; index < times.length; index++) if (Math.abs(times[index] - pointerTime) < Math.abs(times[closest] - pointerTime)) closest = index
+    setActiveIndex(closest)
+  }
+  const selectFromKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    if (event.key === 'Home') return setActiveIndex(0)
+    if (event.key === 'End') return setActiveIndex(points.length - 1)
+    setActiveIndex((index) => Math.max(0, Math.min(points.length - 1, (index ?? points.length - 1) + (event.key === 'ArrowLeft' ? -1 : 1))))
+  }
+
+  return <div className={`dashboard-chart-visual ${tone}${fetching ? ' fetching' : ''}`}>
+    <div ref={frameRef} className="dashboard-chart-frame" role="group" tabIndex={0} aria-label="Graf čistého jmění. Hodnoty lze procházet šipkami doleva a doprava." onFocus={() => setActiveIndex((index) => index ?? points.length - 1)} onBlur={() => setActiveIndex(null)} onKeyDown={selectFromKeyboard} onPointerMove={selectFromPointer} onPointerDown={selectFromPointer} onPointerLeave={() => setActiveIndex(null)}>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Vývoj čistého jmění">
+        <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="currentColor" stopOpacity=".2"/><stop offset="1" stopColor="currentColor" stopOpacity="0"/></linearGradient></defs>
+        {tickValues.map((tick) => <line key={tick} className="dashboard-grid-line" x1={pad.left} x2={width - pad.right} y1={y(tick)} y2={y(tick)} />)}
+        {min < 0 && max > 0 && <line className="dashboard-zero-line" x1={pad.left} x2={width - pad.right} y1={y(0)} y2={y(0)} />}
+        {areaPath && <path className="dashboard-chart-area" d={areaPath} fill={`url(#${gradientId})`} />}
+        {points.length > 1 && <path className="dashboard-history-line" d={linePath} />}
+        {points.length === 1 && <circle className="dashboard-endpoint" cx={x(points[0].date)} cy={y(points[0].value)} r="4" />}
+        {active && <><line className="dashboard-crosshair" x1={x(active.date)} x2={x(active.date)} y1={pad.top} y2={height - pad.bottom} /><circle className="dashboard-active-point" cx={x(active.date)} cy={y(active.value)} r="5" /></>}
+      </svg>
+      <div className="dashboard-y-axis" aria-hidden="true">{tickValues.map((tick) => <span key={tick}>{compactCzk.format(tick)}</span>)}</div>
+      {active && <div className={`dashboard-chart-tooltip${activeIndex === 0 ? ' start' : activeIndex === points.length - 1 ? ' end' : ''}`} style={{ left: `${x(active.date) / width * 100}%`, top: `${y(active.value) / height * 100}%` }} aria-live="polite"><time>{chartDate.format(new Date(`${active.date}T12:00:00`))}</time><strong>{czk.format(active.value)}</strong></div>}
+    </div>
+    <div className="dashboard-x-axis" aria-hidden="true">{dateIndexes.map((index) => <time key={points[index].date}>{chartDate.format(new Date(`${points[index].date}T12:00:00`))}</time>)}</div>
+    {fetching && <span className="dashboard-chart-refresh" role="status">Aktualizuji…</span>}
   </div>
 }
 
@@ -92,7 +145,7 @@ function StrategyCard({ data, loading, error, onClick }: { data?: StrategyOvervi
   const valid = data && [data.portfolioValueCzk, data.progressPercent, data.profitCzk, data.triggerCzk].every(Number.isFinite)
   const recommendation = valid ? data.recommendation : loading ? 'NAČÍTÁM' : 'NEDOSTUPNÉ'
   return <button className="dashboard-focus-card dashboard-strategy-card" type="button" onClick={onClick}>
-    <div className="dashboard-card-header"><span><CircleGauge size={17} />BTC strategie</span><ChevronRight size={15} /></div>
+    <div className="dashboard-card-header"><span className="dashboard-card-icon"><CircleGauge size={18} /></span><div><strong>BTC strategie</strong><small>Realizace zisku podle checkpointu</small></div><ChevronRight size={16} /></div>
     <div className="dashboard-card-primary"><span>Stav strategie</span><strong className={recommendation === 'PRODAT' ? 'positive' : undefined}>{recommendation}</strong><small>{error ? 'Strategii se nepodařilo načíst' : valid ? `Zisk od checkpointu ${czk.format(data.profitCzk)}` : 'Načítám aktuální stav'}</small></div>
     <div className="dashboard-strategy-progress"><div><span style={{ width: `${valid ? Math.min(100, Math.max(0, data.progressPercent)) : 0}%` }} /></div><small>{valid ? `Trigger ${czk.format(data.triggerCzk)}` : 'Trigger'}</small><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></div>
     {valid && data.recommendedTransferCzk > 0 && <p>Připraveno k přesunu do VGLA <b>{czk.format(data.recommendedTransferCzk)}</b></p>}
@@ -106,14 +159,18 @@ function RentCard({ overview, price, loading, error, onClick }: { overview?: Vgl
   const annual = value === null ? null : value * totals!.rentRatePercent / 100
   const monthly = annual === null ? null : annual / 12
   return <button className="dashboard-focus-card dashboard-rent-card" type="button" onClick={onClick}>
-    <div className="dashboard-card-header"><span><PiggyBank size={17} />VGLA renta</span><ChevronRight size={15} /></div>
-    <div className="dashboard-card-primary"><span>Měsíční renta</span><strong>{monthly === null ? '—' : czk.format(monthly)}</strong><small>{error ? 'Rentu se nepodařilo načíst' : loading ? 'Načítám portfolio…' : `${totals?.rentRatePercent ?? 0} % p.a. · ročně ${czk.format(annual ?? 0)}`}</small></div>
+    <div className="dashboard-card-header"><span className="dashboard-card-icon"><PiggyBank size={18} /></span><div><strong>VGLA renta</strong><small>Pravidelný příjem z portfolia</small></div><ChevronRight size={16} /></div>
+    <div className="dashboard-card-primary"><span>Měsíční renta</span><strong className="positive">{monthly === null ? '—' : czk.format(monthly)}</strong><small>{error ? 'Rentu se nepodařilo načíst' : loading ? 'Načítám portfolio…' : `${totals?.rentRatePercent ?? 0} % p.a. · ročně ${czk.format(annual ?? 0)}`}</small></div>
     <div className="dashboard-rent-footer"><div><span>Renta pool</span><strong>{czk.format(totals?.rentPoolCzk ?? 0)}</strong></div><div><span>Další dostupná renta</span><strong>{czk.format((totals?.rentPoolCzk ?? 0) + (monthly ?? 0))}</strong></div></div>
     {price?.isStale && <p>Tržní cena je dočasně zastaralá.</p>}
   </button>
 }
 
+function validDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`))
+}
+
 function normalizePoints(value: WealthPoint[] | undefined) {
   if (!Array.isArray(value)) return []
-  return value.filter((point) => /^\d{4}-\d{2}-\d{2}$/.test(point.date) && Number.isFinite(point.trackedNetWorthCzk) && Number.isFinite(point.grossAssetsCzk)).sort((a, b) => a.date.localeCompare(b.date))
+  return value.filter((point) => validDate(point.date) && Number.isFinite(point.trackedNetWorthCzk) && Number.isFinite(point.grossAssetsCzk)).sort((a, b) => a.date.localeCompare(b.date))
 }

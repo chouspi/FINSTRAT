@@ -328,7 +328,8 @@ describe("DashboardPage", () => {
     expect(screen.getByText(/Odhad dluhu na konci období/)).toBeInTheDocument();
   });
 
-  it("renders a full-width net-worth chart without trend or range controls", async () => {
+  it("renders the interactive net-worth chart and reloads selected timeframes", async () => {
+    const user = userEvent.setup();
     const router = createTestRouter("/");
     await router.load();
     render(
@@ -341,11 +342,23 @@ describe("DashboardPage", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("Čisté jmění", { selector: ".dashboard-panel-header > span" })).toBeInTheDocument();
-    expect(await screen.findByText(/-?20[  ]000[  ]Kč/, { selector: ".dashboard-chart-copy > strong" })).toHaveClass("negative");
+    expect(await screen.findByRole("heading", { name: "Čisté jmění" })).toBeInTheDocument();
+    expect(await screen.findByText(/-?20[  ]000[  ]Kč/, { selector: ".dashboard-chart-summary > strong" })).toHaveClass("negative");
     expect(screen.getByText("za poslední měsíc")).toBeInTheDocument();
-    expect(await screen.findByRole("img", { name: "Vývoj čistého jmění" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "1M" })).not.toBeInTheDocument();
+    const chart = await screen.findByRole("img", { name: "Vývoj čistého jmění" });
+    expect(chart.querySelectorAll(".dashboard-grid-line")).toHaveLength(4);
+    const chartFrame = screen.getByRole("group", { name: /Graf čistého jmění/ });
+    vi.spyOn(chartFrame, "getBoundingClientRect").mockReturnValue({ left: 0, width: 1000 } as DOMRect);
+    fireEvent.pointerMove(chartFrame, { clientX: 0 });
+    expect(document.querySelector(".dashboard-chart-tooltip")).toBeInTheDocument();
+    fireEvent.keyDown(chartFrame, { key: "End" });
+    expect(document.querySelector(".dashboard-active-point")).toBeInTheDocument();
+
+    expect(screen.getByRole("button", { name: "1M" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "3M" }));
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("/api/wealth/history?days=90"))).toBe(true));
+    expect(await screen.findByText("za poslední 3 měsíce")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "3M" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("tab", { name: "Trend" })).not.toBeInTheDocument();
     expect(screen.queryByText("Základní scénář za 12 měsíců")).not.toBeInTheDocument();
   });
