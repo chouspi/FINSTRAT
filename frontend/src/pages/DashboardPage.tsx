@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowDownRight, ArrowUpRight, Bitcoin, ChevronRight, Landmark, RefreshCw, TrendingUp, Wallet } from 'lucide-react'
 import { apiRequest } from '../lib/api'
@@ -50,6 +50,7 @@ export function DashboardPage() {
   const wealth = useQuery({
     queryKey: ['wealth', 'history', selectedTimeframe.days],
     queryFn: () => apiRequest<WealthHistory>(`/api/wealth/history?days=${selectedTimeframe.days}`),
+    placeholderData: keepPreviousData,
     retry: false,
   })
   const strategy = useQuery({ queryKey: ['strategy', 'overview'], queryFn: () => apiRequest<StrategyOverview>('/api/strategy/overview'), retry: false })
@@ -80,7 +81,7 @@ export function DashboardPage() {
             {TIMEFRAMES.map((item) => <button key={item.key} type="button" className={timeframe === item.key ? 'active' : undefined} aria-pressed={timeframe === item.key} onClick={() => setTimeframe(item.key)}>{item.label}</button>)}
           </div>
         </div>
-        <DashboardChart history={points.map((point) => ({ date: point.date, value: point.trackedNetWorthCzk! }))} loading={wealth.isPending} fetching={wealth.isFetching} error={wealth.isError} onRetry={() => void wealth.refetch()} />
+        <DashboardChart history={points.map((point) => ({ date: point.date, value: point.trackedNetWorthCzk! }))} loading={wealth.isPending} error={wealth.isError} onRetry={() => void wealth.refetch()} />
       </section>
       <div className="dashboard-focus-grid">
         <StrategyCard data={strategy.data} loading={strategy.isPending} error={strategy.isError} onClick={() => void navigate({ to: '/strategy', search: { dialog: 'execute' } })} />
@@ -103,7 +104,7 @@ function NetWorthSummary({ points, loading }: { points: WealthPoint[]; loading: 
   </div>
 }
 
-function DashboardChart({ history, loading, fetching, error, onRetry }: { history: { date: string; value: number }[]; loading: boolean; fetching: boolean; error: boolean; onRetry: () => void }) {
+function DashboardChart({ history, loading, error, onRetry }: { history: { date: string; value: number }[]; loading: boolean; error: boolean; onRetry: () => void }) {
   const gradientId = useId().replaceAll(':', '')
   const plotRef = useRef<HTMLDivElement>(null)
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
@@ -152,7 +153,7 @@ function DashboardChart({ history, loading, fetching, error, onRetry }: { histor
     setActiveIndex((index) => Math.max(0, Math.min(points.length - 1, (index ?? points.length - 1) + (event.key === 'ArrowLeft' ? -1 : 1))))
   }
 
-  return <div className={`dashboard-chart-visual ${tone}${fetching ? ' fetching' : ''}`}>
+  return <div className={`dashboard-chart-visual ${tone}`}>
     <div className="dashboard-chart-frame" role="group" tabIndex={0} aria-label="Graf čistého jmění. Hodnoty lze procházet šipkami doleva a doprava." onFocus={() => setActiveIndex((index) => index ?? points.length - 1)} onBlur={() => setActiveIndex(null)} onKeyDown={selectFromKeyboard}>
       <div className="dashboard-chart-grid">
         <div className="dashboard-y-axis" aria-hidden="true">{tickValues.map((tick) => <span key={tick}>{compactCzk.format(tick)}</span>)}</div>
@@ -173,7 +174,6 @@ function DashboardChart({ history, loading, fetching, error, onRetry }: { histor
       </div>
       <div className="dashboard-x-axis" aria-hidden="true">{dateIndexes.map((index) => <time className={index === 0 ? 'start' : index === points.length - 1 ? 'end' : undefined} style={{ left: `${x(points[index].date) / width * 100}%` }} key={points[index].date}>{chartDate.format(new Date(`${points[index].date}T12:00:00`))}</time>)}</div>
     </div>
-    {fetching && <span className="dashboard-chart-refresh" role="status">Aktualizuji…</span>}
   </div>
 }
 

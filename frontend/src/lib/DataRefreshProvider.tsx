@@ -9,7 +9,10 @@ export function DataRefreshProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const refresh = () => {
       if (document.visibilityState === 'visible') {
-        void queryClient.invalidateQueries({ refetchType: 'active' })
+        void queryClient.invalidateQueries({
+          predicate: (query) => query.queryKey[0] !== 'wealth' && query.queryKey[0] !== 'strategy',
+          refetchType: 'active',
+        })
       }
     }
     const refreshWhenVisible = () => {

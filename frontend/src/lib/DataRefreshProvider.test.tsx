@@ -33,4 +33,26 @@ describe('DataRefreshProvider', () => {
     })
     expect(queryFn).toHaveBeenCalledTimes(2)
   })
+
+  it('does not periodically refresh wealth and strategy queries', async () => {
+    vi.useFakeTimers()
+    const wealthQuery = vi.fn().mockResolvedValue('wealth')
+    const strategyQuery = vi.fn().mockResolvedValue('strategy')
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    function Consumer() {
+      useQuery({ queryKey: ['wealth', 'history', 30], queryFn: wealthQuery })
+      useQuery({ queryKey: ['strategy', 'overview'], queryFn: strategyQuery })
+      return null
+    }
+
+    render(<QueryClientProvider client={client}><DataRefreshProvider><Consumer /></DataRefreshProvider></QueryClientProvider>)
+    await act(async () => { await Promise.resolve() })
+    await act(async () => {
+      vi.advanceTimersByTime(DATA_REFRESH_INTERVAL_MS)
+      await Promise.resolve()
+    })
+
+    expect(wealthQuery).toHaveBeenCalledTimes(1)
+    expect(strategyQuery).toHaveBeenCalledTimes(1)
+  })
 })
