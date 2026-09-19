@@ -1,7 +1,7 @@
 import { useId, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowDownRight, ArrowUpRight, Banknote, Bitcoin, ChevronRight, CircleGauge, Landmark, PiggyBank, RefreshCw, TrendingUp, Wallet } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Bitcoin, ChevronRight, Landmark, RefreshCw, TrendingUp, Wallet } from 'lucide-react'
 import { apiRequest } from '../lib/api'
 import { calculateIncomeAllocation, formatCzkInput, parseCzkInput } from '../lib/incomePlan'
 import type { StrategyOverview } from '../lib/strategy'
@@ -180,9 +180,8 @@ function DashboardChart({ history, loading, fetching, error, onRetry }: { histor
 function StrategyCard({ data, loading, error, onClick }: { data?: StrategyOverview; loading: boolean; error: boolean; onClick: () => void }) {
   const valid = data && [data.portfolioValueCzk, data.progressPercent, data.profitCzk, data.triggerCzk].every(Number.isFinite)
   const recommendation = valid ? data.recommendation : loading ? 'NAČÍTÁM' : 'NEDOSTUPNÉ'
-  return <button className="dashboard-focus-card dashboard-strategy-card" type="button" onClick={onClick}>
-    <div className="dashboard-card-header"><span className="dashboard-card-icon"><CircleGauge size={18} /></span><div><strong>BTC strategie</strong><small>Realizace zisku podle checkpointu</small></div><ChevronRight size={16} /></div>
-    <div className="dashboard-card-primary"><span>Stav strategie</span><strong className={recommendation === 'PRODAT' ? 'positive' : undefined}>{recommendation}</strong><small>{error ? 'Strategii se nepodařilo načíst' : valid ? `Zisk od checkpointu ${czk.format(data.profitCzk)}` : 'Načítám aktuální stav'}</small></div>
+  return <button className="dashboard-focus-card dashboard-strategy-card" type="button" aria-label="BTC strategie" onClick={onClick}>
+    <div className="dashboard-card-primary"><span>BTC strategie</span><strong className={recommendation === 'PRODAT' ? 'positive' : undefined}>{recommendation}</strong><small>{error ? 'Strategii se nepodařilo načíst' : valid ? `Zisk od checkpointu ${czk.format(data.profitCzk)}` : 'Načítám aktuální stav'}</small></div>
     <div className="dashboard-strategy-progress"><div><span style={{ width: `${valid ? Math.min(100, Math.max(0, data.progressPercent)) : 0}%` }} /></div><small>{valid ? `Trigger ${czk.format(data.triggerCzk)}` : 'Trigger'}</small><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></div>
     {valid && data.recommendedTransferCzk > 0 && <p>Připraveno k přesunu do VGLA <b>{czk.format(data.recommendedTransferCzk)}</b></p>}
   </button>
@@ -221,7 +220,6 @@ function IncomeCalculator({ data }: { data: IncomeOverview }) {
     { label: 'Spending účet', amount: allocation.cashAmount, icon: Wallet, tone: 'cash' },
   ].filter((row) => row.label !== 'Dluhy' || row.amount > .005)
   return <section className="dashboard-focus-card dashboard-income-card" aria-label="Income plán">
-    <div className="dashboard-card-header"><span className="dashboard-card-icon dashboard-income-card-icon"><Banknote size={18} /></span><div><strong>Income plán</strong><small>Rozdělení příjmu podle plánu</small></div></div>
     <label className="dashboard-income-input"><span>Částka k rozdělení</span><div><input aria-label="Částka k rozdělení" inputMode="decimal" value={capital} onChange={(event) => setCapital(formatCzkInput(event.target.value))} /><b>Kč</b></div></label>
     <div className="dashboard-income-outputs">
       {rows.map((row) => {
@@ -244,9 +242,8 @@ function RentCard({ overview, price, loading, error, onClick }: { overview?: Vgl
   const value = valid ? totals!.shares * price!.priceCzk : null
   const annual = value === null ? null : value * totals!.rentRatePercent / 100
   const monthly = annual === null ? null : annual / 12
-  return <button className="dashboard-focus-card dashboard-rent-card" type="button" onClick={onClick}>
-    <div className="dashboard-card-header"><span className="dashboard-card-icon"><PiggyBank size={18} /></span><div><strong>VGLA renta</strong><small>Pravidelný příjem z portfolia</small></div><ChevronRight size={16} /></div>
-    <div className="dashboard-card-primary"><span>Měsíční renta</span><strong className="positive">{monthly === null ? '—' : czk.format(monthly)}</strong><small>{error ? 'Rentu se nepodařilo načíst' : loading ? 'Načítám portfolio…' : `${totals?.rentRatePercent ?? 0} % p.a. · ročně ${czk.format(annual ?? 0)}`}</small></div>
+  return <button className="dashboard-focus-card dashboard-rent-card" type="button" aria-label="VGLA renta" onClick={onClick}>
+    <div className="dashboard-card-primary"><span>VGLA renta</span><strong className="positive">{monthly === null ? '—' : czk.format(monthly)}</strong><small>{error ? 'Rentu se nepodařilo načíst' : loading ? 'Načítám portfolio…' : `Měsíčně · ${totals?.rentRatePercent ?? 0} % p.a. · ročně ${czk.format(annual ?? 0)}`}</small></div>
     <div className="dashboard-rent-footer"><div><span>Renta pool</span><strong>{czk.format(totals?.rentPoolCzk ?? 0)}</strong></div><div><span>Další dostupná renta</span><strong>{czk.format((totals?.rentPoolCzk ?? 0) + (monthly ?? 0))}</strong></div></div>
     {price?.isStale && <p>Tržní cena je dočasně zastaralá.</p>}
   </button>

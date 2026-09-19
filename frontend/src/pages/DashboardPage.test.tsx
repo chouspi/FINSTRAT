@@ -385,7 +385,7 @@ describe("DashboardPage", () => {
     expect(await within(strategyCard).findByText("PRODAT")).toBeInTheDocument();
     expect(within(strategyCard).getByText(/Připraveno k přesunu do VGLA/)).toBeInTheDocument();
     const rentCard = screen.getByRole("button", { name: /VGLA renta/ });
-    expect(within(rentCard).getByText("Měsíční renta")).toBeInTheDocument();
+    expect(within(rentCard).getByText(/Měsíčně/)).toBeInTheDocument();
     const incomeCard = screen.getByRole("region", { name: "Income plán" });
     const capitalInput = within(incomeCard).getByRole("textbox", { name: "Částka k rozdělení" });
     expect(capitalInput).toHaveValue("21 600");
