@@ -185,8 +185,9 @@ function StrategyCard({ data, loading, error, onClick }: { data?: StrategyOvervi
   return <section className="dashboard-focus-card dashboard-strategy-card" aria-label="BTC strategie">
     <h3>BTC strategie</h3>
     <div className="dashboard-strategy-progress">
-      <span className="dashboard-strategy-ratio"><span>{valid ? `${czk.format(data.profitCzk)} / ${czk.format(data.triggerCzk)}` : '— / —'}</span><strong>{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong></span>
+      <span className="dashboard-strategy-ratio">{valid ? `${czk.format(data.profitCzk)} / ${czk.format(data.triggerCzk)}` : '— / —'}</span>
       <div><span style={{ width: `${progress}%` }} /></div>
+      <strong className="dashboard-strategy-percent">{valid ? `${Math.round(data.progressPercent)} %` : '—'}</strong>
     </div>
     <div className="dashboard-strategy-state">
       {transfer
