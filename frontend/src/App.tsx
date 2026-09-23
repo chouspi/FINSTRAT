@@ -157,6 +157,7 @@ function App() {
         queryClient.invalidateQueries({ queryKey: ['debts'] }),
         queryClient.invalidateQueries({ queryKey: ['income-plan'] }),
         queryClient.invalidateQueries({ queryKey: ['wealth'] }),
+        queryClient.invalidateQueries({ queryKey: ['strategy'] }),
       ])
     },
   })
@@ -453,6 +454,7 @@ function App() {
               queryClient.invalidateQueries({ queryKey: ['debts'] }),
               queryClient.invalidateQueries({ queryKey: ['income-plan'] }),
               queryClient.invalidateQueries({ queryKey: ['wealth'] }),
+              queryClient.invalidateQueries({ queryKey: ['strategy'] }),
             ])
             setLoginOpen(false)
           }}
