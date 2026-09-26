@@ -26,9 +26,9 @@ describe("calculateWealthTrend", () => {
 
     expect(trend.hasReliableHistory).toBe(true);
     expect(trend.annualGrowthPercent).toBeCloseTo(0);
-    expect(trend.annualContributionCzk).toBeCloseTo(10000 / 30 * 365.25);
-    expect(trend.projection).toHaveLength(13);
-    expect(trend.projection.at(-1)!.portfolioCzk).toBeCloseTo(130000 + 10000 / 30 * 365.25);
+    expect(trend.annualContributionCzk).toBeCloseTo(10000 / 30 * 365);
+    expect(trend.projection).toHaveLength(366);
+    expect(trend.projection.at(-1)!.portfolioCzk).toBeCloseTo(130000 + 10000 / 30 * 365);
   });
 
   it("compounds the historical return of the held portfolio", () => {
@@ -64,8 +64,8 @@ describe("calculateWealthTrend", () => {
       { effectiveAt: "2026-03-15", amountCzk: 30000 },
     ])!;
 
-    expect(trend.projection[1].debtCzk).toBe(100000);
-    expect(trend.projection[2].debtCzk).toBe(70000);
+    expect(trend.projection.find((p) => p.date === "2026-03-14")!.debtCzk).toBe(100000);
+    expect(trend.projection.find((p) => p.date === "2026-03-15")!.debtCzk).toBe(70000);
   });
 
   it("ignores invalid and estimated observations during calibration", () => {
@@ -87,10 +87,10 @@ describe("calculateWealthTrend", () => {
     ], 1)!;
     const flow = 0.2 * 105000;
     const factor = 1 + (132000 - 100000 - flow) / (100000 + flow / 2);
-    expect(trend.annualContributionCzk).toBeCloseTo(flow / 30 * 365.25);
+    expect(trend.annualContributionCzk).toBeCloseTo(flow / 30 * 365);
     expect(trend.annualGrowthPercent).toBeCloseTo((factor ** (365.25 / 30) - 1) * 100);
     expect(trend.projection[1].portfolioCzk).toBeCloseTo(
-      (132000 * factor ** (28 / 60) + trend.annualContributionCzk / 12) * factor ** (28 / 60),
+      (132000 * factor ** (1 / 60) + flow / 30) * factor ** (1 / 60),
     );
   });
 
@@ -115,7 +115,7 @@ describe("calculateWealthTrend", () => {
   it("gives recent contribution changes more weight and ignores history older than a year", () => {
     const recent = [point("2026-01-01", 1), point("2026-04-01", 1), point("2026-06-30", 1.3)];
     const trend = calculateWealthTrend(recent, 1)!;
-    expect(trend.annualContributionCzk).toBeCloseTo(30000 / 90 * 2 / 3 * 365.25);
+    expect(trend.annualContributionCzk).toBeGreaterThan(30000 / 90 * 2 / 3 * 365);
     expect(calculateWealthTrend([point("2020-01-01", 100), ...recent], 1)!.annualContributionCzk)
       .toBeCloseTo(trend.annualContributionCzk);
   });
@@ -124,7 +124,7 @@ describe("calculateWealthTrend", () => {
     const trend = calculateWealthTrend([
       point("2026-01-01", 1), point("2026-04-01", 1.3), point("2026-06-30", 1.3),
     ], 1)!;
-    expect(trend.annualContributionCzk).toBeCloseTo(30000 / 90 / 3 * 365.25);
+    expect(trend.annualContributionCzk).toBeLessThan(30000 / 90 / 3 * 365);
   });
 
   it("projects withdrawals and stops at an empty portfolio", () => {
@@ -142,7 +142,7 @@ describe("calculateWealthTrend", () => {
       { ...point("2026-01-01", 0, 0), vwcePriceCzk: 0 },
       { ...point("2026-01-31", 1), vwcePriceCzk: 0 },
     ], 1)!;
-    expect(trend.annualContributionCzk).toBeCloseTo(100000 / 30 * 365.25);
+    expect(trend.annualContributionCzk).toBeCloseTo(100000 / 30 * 365);
     expect(trend.annualGrowthPercent).toBe(0);
   });
 
@@ -161,8 +161,8 @@ describe("calculateWealthTrend", () => {
     ], 1)!;
     expect(trend.history).toHaveLength(2);
     expect(trend.projection[0].portfolioCzk).toBeCloseTo(110000);
-    expect(trend.projection[1].date).toBe("2026-02-28");
-    expect(trend.projection[2].date).toBe("2026-03-31");
+    expect(trend.projection[1].date).toBe("2026-02-01");
+    expect(trend.projection.at(-1)!.date).toBe("2027-01-31");
   });
 
   it("projects 33 days of inflows even with fewer than 30 days of returns", () => {
@@ -192,6 +192,33 @@ describe("calculateWealthTrend", () => {
     expect(trend.growthStatus).toBe("stale");
     expect(trend.annualContributionCzk).toBe(0);
     expect(trend.annualGrowthPercent).toBe(0);
+  });
+
+  it("shows the learned payment rhythm in the daily chart and keeps horizon totals consistent", () => {
+    let quantity = 1;
+    const points = Array.from({ length: 91 }, (_, index) => {
+      const date = new Date(Date.UTC(2026, 0, 1 + index)).toISOString().slice(0, 10);
+      if (index > 0 && new Date(date).getUTCDay() === 1) quantity += 0.07;
+      return point(date, quantity);
+    });
+    const trend = calculateWealthTrend(points, 1)!;
+    const longer = calculateWealthTrend(points, 5)!;
+    expect(trend.cashFlowPattern).toBe("weekly");
+    const day = (date: string) => trend.projection.find((p) => p.date === date)!;
+    const monday = day("2026-04-06").portfolioCzk - day("2026-04-05").portfolioCzk;
+    const tuesday = day("2026-04-07").portfolioCzk - day("2026-04-06").portfolioCzk;
+    expect(monday).toBeGreaterThan(tuesday * 5);
+    expect(trend.projection.at(-1)!.portfolioCzk - trend.projection[0].portfolioCzk)
+      .toBeCloseTo(trend.annualContributionCzk);
+    expect(longer.projection.slice(0, trend.projection.length)).toEqual(trend.projection);
+  });
+
+  it("projects every calendar day through a leap year", () => {
+    const trend = calculateWealthTrend([point("2027-12-01", 1), point("2028-01-01", 1.1)], 1)!;
+    expect(trend.projection).toHaveLength(367);
+    expect(trend.projection.some((p) => p.date === "2028-02-29")).toBe(true);
+    expect(trend.projection.at(-1)!.portfolioCzk - trend.projection[0].portfolioCzk)
+      .toBeCloseTo(trend.annualContributionCzk);
   });
 
 });

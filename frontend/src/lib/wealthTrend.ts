@@ -1,3 +1,5 @@
+import { createCashFlowForecast, type CashFlowPattern, type DailyCashFlow } from "./wealthCashFlow";
+
 export type WealthTrendInput = {
   date: string;
   quality?: "complete" | "estimated";
@@ -26,6 +28,8 @@ export type WealthTrend = {
   growthStatus: TrendHistoryStatus;
   hasReliableHistory: boolean;
   minimumHistoryDays: number;
+  cashFlowPattern: CashFlowPattern;
+  observedCashFlowDays: number;
 };
 
 const DAY_MS = 86_400_000;
@@ -62,8 +66,7 @@ export function calculateWealthTrend(
   const complete = history.filter((point) => point.quality === "complete"
     && daysBetween(point.date, last.date) <= LOOKBACK_DAYS);
   let observationDays = 0;
-  let weightedDays = 0;
-  let weightedFlows = 0;
+  const dailyFlows: DailyCashFlow[] = [];
   let weightedLogReturns = 0;
   let returnWeightedDays = 0;
   let returnDays = 0;
@@ -81,8 +84,9 @@ export function calculateWealthTrend(
       - Math.exp(-RECENCY_DECAY * daysBetween(previous.date, last.date))) / RECENCY_DECAY;
     lastFlowDate = current.date;
     observationDays += days;
-    weightedDays += weight;
-    weightedFlows += flow / days * weight;
+    for (let day = 1; day <= days; day++) {
+      dailyFlows.push({ date: addDays(previous.date, day), amount: flow / days, observed: days === 1 });
+    }
 
     // Modified Dietz: remove net purchases/sales from the change in value.
     // Snapshots don't record trade timing, so assume flows occur mid-interval.
@@ -104,8 +108,11 @@ export function calculateWealthTrend(
   const contributionStatus = historyStatus(observationDays, lastFlowDate);
   const growthStatus = historyStatus(returnDays, lastReturnDate);
   const hasReliableHistory = contributionStatus === "ready" && growthStatus === "ready";
-  const annualContributionCzk = contributionStatus === "ready" ? weightedFlows / weightedDays * YEAR_DAYS : 0;
-  const monthlyContributionCzk = annualContributionCzk / 12;
+  const cashFlow = createCashFlowForecast(dailyFlows, last.date);
+  const contributionAt = (date: string) => contributionStatus === "ready" ? cashFlow.dailyAmount(date) : 0;
+  const firstYearDays = daysBetween(last.date, addMonths(last.date, 12));
+  const annualContributionCzk = Array.from({ length: firstYearDays }, (_, day) => contributionAt(addDays(last.date, day + 1)))
+    .reduce((sum, amount) => sum + amount, 0);
   const dailyLogReturn = growthStatus === "ready" ? weightedLogReturns / returnWeightedDays : 0;
   const annualGrowthPercent = Math.expm1(dailyLogReturn * YEAR_DAYS) * 100;
 
@@ -117,14 +124,13 @@ export function calculateWealthTrend(
     .filter((payment) => validDate(payment.effectiveAt) && payment.effectiveAt > last.date && Number.isFinite(payment.amountCzk) && payment.amountCzk > 0)
     .sort((a, b) => a.effectiveAt.localeCompare(b.effectiveAt));
   let paymentIndex = 0;
-  for (let step = 1; step <= years * 12; step++) {
-    const projectionDate = addMonths(last.date, step);
-    const days = daysBetween(projection.at(-1)!.date, projectionDate);
-    const halfPeriodGrowth = Math.exp(dailyLogReturn * days / 2);
-    const valueBeforeFlow = portfolioCzk * halfPeriodGrowth;
-    const contribution = Math.max(-valueBeforeFlow, monthlyContributionCzk);
-    // New money participates in growth from the middle of each projected month.
-    portfolioCzk = Math.max(0, (valueBeforeFlow + contribution) * halfPeriodGrowth);
+  const horizonDays = daysBetween(last.date, addMonths(last.date, years * 12));
+  const halfDayGrowth = Math.exp(dailyLogReturn / 2);
+  for (let day = 1; day <= horizonDays; day++) {
+    const projectionDate = addDays(last.date, day);
+    const valueBeforeFlow = portfolioCzk * halfDayGrowth;
+    const contribution = Math.max(-valueBeforeFlow, contributionAt(projectionDate));
+    portfolioCzk = Math.max(0, (valueBeforeFlow + contribution) * halfDayGrowth);
     investedCzk = contribution >= 0 ? investedCzk + contribution
       : valueBeforeFlow > 0 ? investedCzk * (1 + contribution / valueBeforeFlow) : 0;
     let scheduledPaymentCzk = 0;
@@ -135,7 +141,7 @@ export function calculateWealthTrend(
     debtCzk = Math.max(0, debtCzk - scheduledPaymentCzk);
     projection.push({ date: projectionDate, portfolioCzk, investedCzk, netWorthCzk: portfolioCzk - debtCzk, debtCzk });
   }
-  return { history, projection, annualContributionCzk, annualGrowthPercent, observationDays, returnObservationDays: returnDays, contributionStatus, growthStatus, hasReliableHistory, minimumHistoryDays: MIN_TREND_DAYS };
+  return { history, projection, annualContributionCzk, annualGrowthPercent, observationDays, returnObservationDays: returnDays, contributionStatus, growthStatus, hasReliableHistory, minimumHistoryDays: MIN_TREND_DAYS, cashFlowPattern: cashFlow.pattern, observedCashFlowDays: cashFlow.observedDays };
 }
 
 function validPoint(point: WealthTrendInput) {
@@ -176,4 +182,8 @@ function addMonths(isoDate: string, months: number) {
   const normalizedMonth = ((targetMonth % 12) + 12) % 12;
   const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
   return new Date(Date.UTC(targetYear, normalizedMonth, Math.min(day, lastDay))).toISOString().slice(0, 10);
+}
+
+function addDays(date: string, days: number) {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 }

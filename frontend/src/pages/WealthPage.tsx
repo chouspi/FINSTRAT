@@ -462,7 +462,7 @@ export function WealthPage() {
                 <p>
                   {trend.contributionStatus === "ready" ? (
                     <>
-                      Čistý přítok podle historie{" "}
+                      Čistý přítok podle historie · průměr projekce na příští rok{" "}
                       <strong>{czk.format(trend.annualContributionCzk / 12)} / měsíc</strong>
                       {" "}· z {trend.observationDays} dní historie
                     </>
@@ -495,9 +495,15 @@ export function WealthPage() {
                 </p>
                 {(trend.contributionStatus === "ready" || trend.growthStatus === "ready") && (
                   <p>
-                    Projekce vychází z dostupné historie posledního roku vlastního portfolia;
-                    novější vývoj má větší váhu.
-                    {" "}Přítoky a výběry odhadujeme ze změn drženého množství BTC a VGLA.
+                    Výpočet po dnech · {trend.cashFlowPattern === "monthly"
+                      ? "měsíční rytmus přítoků ověřený na historii"
+                      : trend.cashFlowPattern === "weekly"
+                        ? "týdenní rytmus přítoků ověřený na historii"
+                        : "denní průměry bez prokázaného pravidelného rytmu"}.
+                    {" "}Tempo posledních 30 dní postupně přechází k dlouhodobému průměru.
+                    {" "}Přítoky i výběry odhadujeme ze změn množství BTC a VGLA, včetně dnů bez pohybu.
+                    {trend.observedCashFlowDays < trend.observationDays
+                      && " V mezerách mezi záznamy známe jen průměrný denní přítok."}
                     {(trend.observationDays < 90 || trend.returnObservationDays < 90)
                       && " Krátká historie, méně spolehlivý odhad."}
                   </p>
