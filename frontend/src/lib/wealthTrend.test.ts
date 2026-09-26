@@ -165,4 +165,33 @@ describe("calculateWealthTrend", () => {
     expect(trend.projection[2].date).toBe("2026-03-31");
   });
 
+  it("projects 33 days of inflows even with fewer than 30 days of returns", () => {
+    const trend = calculateWealthTrend([
+      point("2026-01-01", 0, 0),
+      point("2026-01-08", 0, 0),
+      point("2026-02-03", 1),
+    ], 1)!;
+    expect(trend.observationDays).toBe(33);
+    expect(trend.returnObservationDays).toBe(26);
+    expect(trend.contributionStatus).toBe("ready");
+    expect(trend.growthStatus).toBe("short");
+    expect(trend.annualContributionCzk).toBeGreaterThan(0);
+    expect(trend.annualGrowthPercent).toBe(0);
+    expect(trend.projection.at(-1)!.portfolioCzk)
+      .toBeCloseTo(100000 + trend.annualContributionCzk);
+  });
+
+  it("distinguishes stale observations from insufficient history", () => {
+    const trend = calculateWealthTrend([
+      point("2026-01-01", 1), point("2026-02-03", 1.1),
+      { ...point("2026-03-10", 1.2), quality: "estimated" },
+    ], 1)!;
+    expect(trend.observationDays).toBe(33);
+    expect(trend.returnObservationDays).toBe(33);
+    expect(trend.contributionStatus).toBe("stale");
+    expect(trend.growthStatus).toBe("stale");
+    expect(trend.annualContributionCzk).toBe(0);
+    expect(trend.annualGrowthPercent).toBe(0);
+  });
+
 });

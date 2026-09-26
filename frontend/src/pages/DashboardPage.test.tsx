@@ -406,4 +406,30 @@ describe("DashboardPage", () => {
     expect(router.state.location.search).toMatchObject({ dialog: "execute" });
     expect(await screen.findByRole("dialog", { name: /Převést/ })).toBeInTheDocument();
   });
+  it("shows usable inflows separately from insufficient return history", async () => {
+    const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input).includes("/api/wealth/history")) {
+        const points = [
+          { ...point("2026-01-01", 0, 0, 0, 0), btcQuantity: 0, btcPriceCzk: 0, vwceShares: 0 },
+          { ...point("2026-01-08", 0, 0, 0, 0), btcQuantity: 0, btcPriceCzk: 0, vwceShares: 0 },
+          { ...point("2026-02-03", 100000, 100000, 0, 0), btcQuantity: 1, btcPriceCzk: 100000, vwceShares: 0 },
+        ];
+        return { ok: true, status: 200, json: async () => ({ current: points.at(-1), points }) } as Response;
+      }
+      return originalFetch(input, init);
+    });
+    const router = createTestRouter("/wealth?tab=trend");
+    await router.load();
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText(/Čistý přítok podle historie/)).toHaveTextContent("33 dní historie");
+    expect(screen.getByText(/Zhodnocení zatím nepromítáme/)).toHaveTextContent("26 z potřebných 30 dní");
+    expect(screen.getByText(/Zhodnocení zatím nepromítáme/)).toHaveTextContent("projekce zahrnuje přítoky");
+    expect(screen.queryByText(/Bez extrapolace/)).not.toBeInTheDocument();
+  });
+
 });

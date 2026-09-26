@@ -460,39 +460,46 @@ export function WealthPage() {
                   </span>
                 </div>
                 <p>
-                    {trend.hasReliableHistory ? (
-                      <>
-                        Čistý přítok podle historie{" "}
-                        <strong>
-                          {czk.format(trend.annualContributionCzk / 12)} / měsíc
-                        </strong>{" "}
-                        · zhodnocení portfolia bez vkladů{" "}
-                        <strong
-                          className={
-                            trend.annualGrowthPercent >= 0
-                              ? "positive"
-                              : "negative"
-                          }
-                        >
-                          {trend.annualGrowthPercent >= 0 ? "+" : ""}
-                          {trend.annualGrowthPercent.toFixed(1)} % p.a.
-                        </strong>
-                        {" "}· z {trend.observationDays} dní historie, novější vývoj má větší váhu
-                        {trend.observationDays < 90 && " · krátká historie, méně spolehlivý odhad"}
-                      </>
-                    ) : (
-                      <>
-                        Bez extrapolace · pro výpočet potřebujeme alespoň{" "}
-                        <strong>{trend.minimumHistoryDays} dní použitelné historie přítoků a zhodnocení</strong>
-                        {" "}(nyní {trend.observationDays} dní přítoků) a aktuální úplný záznam
-                      </>
-                    )}
+                  {trend.contributionStatus === "ready" ? (
+                    <>
+                      Čistý přítok podle historie{" "}
+                      <strong>{czk.format(trend.annualContributionCzk / 12)} / měsíc</strong>
+                      {" "}· z {trend.observationDays} dní historie
+                    </>
+                  ) : (
+                    <>
+                      Přítoky zatím nepromítáme · {trend.contributionStatus === "stale"
+                        ? `poslední použitelný záznam přítoků je starší než ${trend.minimumHistoryDays} dní`
+                        : `použitelná historie přítoků má ${trend.observationDays} z potřebných ${trend.minimumHistoryDays} dní`}
+                    </>
+                  )}
                 </p>
-                {trend.hasReliableHistory && (
+                <p>
+                  {trend.growthStatus === "ready" ? (
+                    <>
+                      Zhodnocení portfolia bez vkladů{" "}
+                      <strong className={trend.annualGrowthPercent >= 0 ? "positive" : "negative"}>
+                        {trend.annualGrowthPercent >= 0 ? "+" : ""}
+                        {trend.annualGrowthPercent.toFixed(1)} % p.a.
+                      </strong>
+                      {" "}· z {trend.returnObservationDays} dní historie
+                    </>
+                  ) : (
+                    <>
+                      Zhodnocení zatím nepromítáme · {trend.growthStatus === "stale"
+                        ? `poslední použitelný záznam zhodnocení je starší než ${trend.minimumHistoryDays} dní`
+                        : `použitelná historie zhodnocení má ${trend.returnObservationDays} z potřebných ${trend.minimumHistoryDays} dní`}
+                      {trend.contributionStatus === "ready" && " · projekce zahrnuje přítoky"}
+                    </>
+                  )}
+                </p>
+                {(trend.contributionStatus === "ready" || trend.growthStatus === "ready") && (
                   <p>
-                    Projekce opakuje tempo posledního roku vlastního portfolia a průběžně zhodnocuje i nové vklady.
-                    {" "}Přítoky a výběry odhadujeme ze změn drženého množství BTC a VGLA;
-                    výsledek není zaručený výnos.
+                    Projekce vychází z dostupné historie posledního roku vlastního portfolia;
+                    novější vývoj má větší váhu.
+                    {" "}Přítoky a výběry odhadujeme ze změn drženého množství BTC a VGLA.
+                    {(trend.observationDays < 90 || trend.returnObservationDays < 90)
+                      && " Krátká historie, méně spolehlivý odhad."}
                   </p>
                 )}
                 {trendTarget === "net" && (

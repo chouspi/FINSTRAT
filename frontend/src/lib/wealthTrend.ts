@@ -14,12 +14,16 @@ export type WealthTrendInput = {
 
 export type ScheduledDebtPayment = { effectiveAt: string; amountCzk: number };
 export type WealthTrendPoint = { date: string; portfolioCzk: number; investedCzk: number; netWorthCzk: number; debtCzk: number };
+export type TrendHistoryStatus = "ready" | "short" | "stale";
 export type WealthTrend = {
   history: WealthTrendPoint[];
   projection: WealthTrendPoint[];
   annualContributionCzk: number;
   annualGrowthPercent: number;
   observationDays: number;
+  returnObservationDays: number;
+  contributionStatus: TrendHistoryStatus;
+  growthStatus: TrendHistoryStatus;
   hasReliableHistory: boolean;
   minimumHistoryDays: number;
 };
@@ -63,6 +67,8 @@ export function calculateWealthTrend(
   let weightedLogReturns = 0;
   let returnWeightedDays = 0;
   let returnDays = 0;
+  let lastFlowDate: string | undefined;
+  let lastReturnDate: string | undefined;
   for (let index = 1; index < complete.length; index++) {
     const previous = complete[index - 1];
     const current = complete[index];
@@ -73,6 +79,7 @@ export function calculateWealthTrend(
     // partial calendar months don't change the contribution estimate.
     const weight = (Math.exp(-RECENCY_DECAY * daysBetween(current.date, last.date))
       - Math.exp(-RECENCY_DECAY * daysBetween(previous.date, last.date))) / RECENCY_DECAY;
+    lastFlowDate = current.date;
     observationDays += days;
     weightedDays += weight;
     weightedFlows += flow / days * weight;
@@ -86,15 +93,20 @@ export function calculateWealthTrend(
       weightedLogReturns += Math.log(factor) / days * weight;
       returnWeightedDays += weight;
       returnDays += days;
+      lastReturnDate = current.date;
     }
   }
-  const lastComplete = complete.at(-1);
-  const hasReliableHistory = observationDays >= MIN_TREND_DAYS
-    && returnDays >= MIN_TREND_DAYS
-    && !!lastComplete && daysBetween(lastComplete.date, last.date) <= MIN_TREND_DAYS;
-  const annualContributionCzk = hasReliableHistory ? weightedFlows / weightedDays * YEAR_DAYS : 0;
+  const historyStatus = (days: number, lastUsableDate?: string): TrendHistoryStatus => {
+    if (days < MIN_TREND_DAYS || !lastUsableDate) return "short";
+    return daysBetween(lastUsableDate, last.date) > MIN_TREND_DAYS ? "stale" : "ready";
+  };
+  // Missing return history must never suppress independently observed inflows.
+  const contributionStatus = historyStatus(observationDays, lastFlowDate);
+  const growthStatus = historyStatus(returnDays, lastReturnDate);
+  const hasReliableHistory = contributionStatus === "ready" && growthStatus === "ready";
+  const annualContributionCzk = contributionStatus === "ready" ? weightedFlows / weightedDays * YEAR_DAYS : 0;
   const monthlyContributionCzk = annualContributionCzk / 12;
-  const dailyLogReturn = hasReliableHistory ? weightedLogReturns / returnWeightedDays : 0;
+  const dailyLogReturn = growthStatus === "ready" ? weightedLogReturns / returnWeightedDays : 0;
   const annualGrowthPercent = Math.expm1(dailyLogReturn * YEAR_DAYS) * 100;
 
   const projection: WealthTrendPoint[] = [last];
@@ -123,7 +135,7 @@ export function calculateWealthTrend(
     debtCzk = Math.max(0, debtCzk - scheduledPaymentCzk);
     projection.push({ date: projectionDate, portfolioCzk, investedCzk, netWorthCzk: portfolioCzk - debtCzk, debtCzk });
   }
-  return { history, projection, annualContributionCzk, annualGrowthPercent, observationDays, hasReliableHistory, minimumHistoryDays: MIN_TREND_DAYS };
+  return { history, projection, annualContributionCzk, annualGrowthPercent, observationDays, returnObservationDays: returnDays, contributionStatus, growthStatus, hasReliableHistory, minimumHistoryDays: MIN_TREND_DAYS };
 }
 
 function validPoint(point: WealthTrendInput) {
