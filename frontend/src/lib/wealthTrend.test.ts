@@ -16,31 +16,32 @@ const point = (date: string, quantity: number, price = 100000, debt = 0): Wealth
 });
 
 describe("calculateWealthTrend", () => {
-  it("projects a robust recurring contribution without assuming market growth", () => {
+  it("projects recurring contributions over elapsed days without counting the opening balance", () => {
     const trend = calculateWealthTrend([
       point("2026-01-01", 1),
-      point("2026-02-01", 1.1),
-      point("2026-03-01", 1.2),
+      point("2026-01-31", 1.1),
+      point("2026-03-02", 1.2),
       point("2026-04-01", 1.3),
     ], 1)!;
 
     expect(trend.hasReliableHistory).toBe(true);
-    expect(trend.annualGrowthPercent).toBe(0);
-    expect(trend.annualContributionCzk).toBeCloseTo(90000);
+    expect(trend.annualGrowthPercent).toBeCloseTo(0);
+    expect(trend.annualContributionCzk).toBeCloseTo(10000 / 30 * 365.25);
     expect(trend.projection).toHaveLength(13);
-    expect(trend.projection.at(-1)!.portfolioCzk).toBeCloseTo(220000);
+    expect(trend.projection.at(-1)!.portfolioCzk).toBeCloseTo(130000 + 10000 / 30 * 365.25);
   });
 
-  it("does not extrapolate historical price growth into the forecast", () => {
+  it("compounds the historical return of the held portfolio", () => {
     const trend = calculateWealthTrend([
       point("2026-01-01", 1, 100000),
-      point("2026-02-01", 1, 120000),
-      point("2026-03-01", 1, 90000),
-      point("2026-04-01", 1, 150000),
+      point("2026-01-31", 1, 110000),
+      point("2026-03-02", 1, 121000),
+      point("2026-04-01", 1, 133100),
     ], 1)!;
 
     expect(trend.annualContributionCzk).toBe(0);
-    expect(trend.projection.at(-1)!.portfolioCzk).toBe(150000);
+    expect(trend.annualGrowthPercent).toBeCloseTo((1.1 ** (365.25 / 30) - 1) * 100);
+    expect(trend.projection.at(-1)!.portfolioCzk).toBeCloseTo(133100 * 1.1 ** (365 / 30));
   });
 
   it("uses a flat baseline when history is too short", () => {
@@ -79,4 +80,89 @@ describe("calculateWealthTrend", () => {
     expect(trend.history).toHaveLength(4);
     expect(trend.annualContributionCzk).toBe(0);
   });
+  it("separates deposits from gains and compounds new contributions", () => {
+    const trend = calculateWealthTrend([
+      point("2026-01-01", 1, 100000),
+      point("2026-01-31", 1.2, 110000),
+    ], 1)!;
+    const flow = 0.2 * 105000;
+    const factor = 1 + (132000 - 100000 - flow) / (100000 + flow / 2);
+    expect(trend.annualContributionCzk).toBeCloseTo(flow / 30 * 365.25);
+    expect(trend.annualGrowthPercent).toBeCloseTo((factor ** (365.25 / 30) - 1) * 100);
+    expect(trend.projection[1].portfolioCzk).toBeCloseTo(
+      (132000 * factor ** (28 / 60) + trend.annualContributionCzk / 12) * factor ** (28 / 60),
+    );
+  });
+
+  it("preserves negative returns instead of imposing positive market assumptions", () => {
+    const trend = calculateWealthTrend([
+      point("2026-01-01", 1, 100000), point("2026-01-31", 1, 90000),
+    ], 1)!;
+    expect(trend.annualContributionCzk).toBe(0);
+    expect(trend.annualGrowthPercent).toBeLessThan(0);
+    expect(trend.projection.at(-1)!.portfolioCzk).toBeCloseTo(90000 * 0.9 ** (365 / 30));
+  });
+
+  it("uses the portfolio mix and excludes cost-basis currency changes from contributions", () => {
+    const first = { ...point("2026-01-01", 1), vwceShares: 10, vwcePriceCzk: 10000, grossAssetsCzk: 200000 };
+    const last = { ...point("2026-01-31", 1, 110000), vwceShares: 10, vwcePriceCzk: 9000, grossAssetsCzk: 200000, vwceCostBasisCzk: 123000 };
+    const trend = calculateWealthTrend([first, last], 1)!;
+    expect(trend.annualContributionCzk).toBe(0);
+    expect(trend.annualGrowthPercent).toBe(0);
+    expect(trend.projection.at(-1)!.portfolioCzk).toBe(200000);
+  });
+
+  it("gives recent contribution changes more weight and ignores history older than a year", () => {
+    const recent = [point("2026-01-01", 1), point("2026-04-01", 1), point("2026-06-30", 1.3)];
+    const trend = calculateWealthTrend(recent, 1)!;
+    expect(trend.annualContributionCzk).toBeCloseTo(30000 / 90 * 2 / 3 * 365.25);
+    expect(calculateWealthTrend([point("2020-01-01", 100), ...recent], 1)!.annualContributionCzk)
+      .toBeCloseTo(trend.annualContributionCzk);
+  });
+
+  it("accounts for quiet periods with no deposits", () => {
+    const trend = calculateWealthTrend([
+      point("2026-01-01", 1), point("2026-04-01", 1.3), point("2026-06-30", 1.3),
+    ], 1)!;
+    expect(trend.annualContributionCzk).toBeCloseTo(30000 / 90 / 3 * 365.25);
+  });
+
+  it("projects withdrawals and stops at an empty portfolio", () => {
+    const trend = calculateWealthTrend([
+      point("2026-01-01", 1), point("2026-01-31", 0.5),
+    ], 5)!;
+    expect(trend.annualContributionCzk).toBeLessThan(0);
+    expect(trend.annualGrowthPercent).toBe(0);
+    expect(trend.projection.at(-1)!.portfolioCzk).toBe(0);
+    expect(trend.projection.every((p) => p.portfolioCzk >= 0 && p.investedCzk >= 0)).toBe(true);
+  });
+
+  it("does not halve first purchases when the previously unheld asset has no price", () => {
+    const trend = calculateWealthTrend([
+      { ...point("2026-01-01", 0, 0), vwcePriceCzk: 0 },
+      { ...point("2026-01-31", 1), vwcePriceCzk: 0 },
+    ], 1)!;
+    expect(trend.annualContributionCzk).toBeCloseTo(100000 / 30 * 365.25);
+    expect(trend.annualGrowthPercent).toBe(0);
+  });
+
+  it("does not interpret missing flow data as zero deposits", () => {
+    const trend = calculateWealthTrend([
+      { ...point("2026-01-01", 1), btcQuantity: undefined }, point("2026-04-01", 2),
+    ], 1)!;
+    expect(trend.hasReliableHistory).toBe(false);
+    expect(trend.annualGrowthPercent).toBe(0);
+    expect(trend.annualContributionCzk).toBe(0);
+  });
+
+  it("sorts, deduplicates, rejects impossible dates and handles month ends", () => {
+    const trend = calculateWealthTrend([
+      point("2026-02-30", 5), point("2026-01-31", 1), point("2026-01-01", 1), point("2026-01-31", 1.1),
+    ], 1)!;
+    expect(trend.history).toHaveLength(2);
+    expect(trend.projection[0].portfolioCzk).toBeCloseTo(110000);
+    expect(trend.projection[1].date).toBe("2026-02-28");
+    expect(trend.projection[2].date).toBe("2026-03-31");
+  });
+
 });

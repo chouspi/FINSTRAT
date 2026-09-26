@@ -456,18 +456,17 @@ export function WealthPage() {
                     {trendTarget === "portfolio" ? "Investováno" : "Dluhy"}
                   </span>
                   <span className="trend-projected-key">
-                    světlejší = předpověď
+                    světlejší = projekce
                   </span>
                 </div>
-                {trendTarget === "portfolio" ? (
-                  <p>
+                <p>
                     {trend.hasReliableHistory ? (
                       <>
-                        Průměrný čistý přítok{" "}
+                        Čistý přítok podle historie{" "}
                         <strong>
-                          {czk.format(trend.annualContributionCzk)} / rok
+                          {czk.format(trend.annualContributionCzk / 12)} / měsíc
                         </strong>{" "}
-                        · relativní růst{" "}
+                        · zhodnocení portfolia bez vkladů{" "}
                         <strong
                           className={
                             trend.annualGrowthPercent >= 0
@@ -478,15 +477,25 @@ export function WealthPage() {
                           {trend.annualGrowthPercent >= 0 ? "+" : ""}
                           {trend.annualGrowthPercent.toFixed(1)} % p.a.
                         </strong>
+                        {" "}· z {trend.observationDays} dní historie, novější vývoj má větší váhu
+                        {trend.observationDays < 90 && " · krátká historie, méně spolehlivý odhad"}
                       </>
                     ) : (
                       <>
-                        Neutrální odhad · pro výpočet tempa je potřeba alespoň{" "}
-                        <strong>30 dní historie</strong> (nyní {trend.observationDays})
+                        Bez extrapolace · pro výpočet potřebujeme alespoň{" "}
+                        <strong>{trend.minimumHistoryDays} dní použitelné historie přítoků a zhodnocení</strong>
+                        {" "}(nyní {trend.observationDays} dní přítoků) a aktuální úplný záznam
                       </>
                     )}
+                </p>
+                {trend.hasReliableHistory && (
+                  <p>
+                    Projekce opakuje tempo posledního roku vlastního portfolia a průběžně zhodnocuje i nové vklady.
+                    {" "}Přítoky a výběry odhadujeme ze změn drženého množství BTC a VGLA;
+                    výsledek není zaručený výnos.
                   </p>
-                ) : (
+                )}
+                {trendTarget === "net" && (
                   <p>
                     Odhad dluhu na konci období{" "}
                     <strong>

@@ -21,11 +21,14 @@ export type WealthTrend = {
   annualGrowthPercent: number;
   observationDays: number;
   hasReliableHistory: boolean;
+  minimumHistoryDays: number;
 };
 
 const DAY_MS = 86_400_000;
-const MIN_TREND_DAYS = 90;
-const MIN_OBSERVED_MONTHS = 3;
+const MIN_TREND_DAYS = 30;
+const LOOKBACK_DAYS = 365;
+const YEAR_DAYS = 365.25;
+const RECENCY_DECAY = Math.LN2 / 90;
 
 export function calculateWealthTrend(
   points: WealthTrendInput[],
@@ -50,31 +53,50 @@ export function calculateWealthTrend(
   const history = Array.from(new Map(normalized.map((point) => [point.date, point])).values());
   if (history.length < 2) return null;
 
-  const complete = history.filter((point) => point.quality === "complete");
-  const first = complete[0];
-  const lastComplete = complete.at(-1);
-  const observationDays = first && lastComplete ? daysBetween(first.date, lastComplete.date) : 0;
-  const monthlyFlows = new Map<string, number>();
-  let validFlowIntervals = 0;
-  for (let index = 1; index < complete.length; index++) {
-    const flow = estimateExternalFlow(complete[index - 1], complete[index]);
-    if (flow === null) continue;
-    const month = complete[index].date.slice(0, 7);
-    monthlyFlows.set(month, (monthlyFlows.get(month) ?? 0) + flow);
-    validFlowIntervals++;
-  }
-
-  const observedMonths = first && lastComplete ? monthsBetween(first.date, lastComplete.date) + 1 : 0;
-  const monthlyTotals = first && lastComplete
-    ? Array.from({ length: observedMonths }, (_, index) => monthlyFlows.get(addMonths(first.date.slice(0, 7) + "-01", index).slice(0, 7)) ?? 0)
-    : [];
-  const hasReliableHistory = observationDays >= MIN_TREND_DAYS
-    && observedMonths >= MIN_OBSERVED_MONTHS
-    && validFlowIntervals >= MIN_OBSERVED_MONTHS;
-  const monthlyContributionCzk = hasReliableHistory ? winsorizedMean(monthlyTotals) : 0;
-  const annualContributionCzk = monthlyContributionCzk * 12;
-
   const last = history.at(-1)!;
+  // Calibrate only from this portfolio's complete snapshots over the last year.
+  const complete = history.filter((point) => point.quality === "complete"
+    && daysBetween(point.date, last.date) <= LOOKBACK_DAYS);
+  let observationDays = 0;
+  let weightedDays = 0;
+  let weightedFlows = 0;
+  let weightedLogReturns = 0;
+  let returnWeightedDays = 0;
+  let returnDays = 0;
+  for (let index = 1; index < complete.length; index++) {
+    const previous = complete[index - 1];
+    const current = complete[index];
+    const days = daysBetween(previous.date, current.date);
+    const flow = estimateExternalFlow(previous, current);
+    if (flow === null || days <= 0) continue;
+    // Integrate recency weights over elapsed time so sampling frequency and
+    // partial calendar months don't change the contribution estimate.
+    const weight = (Math.exp(-RECENCY_DECAY * daysBetween(current.date, last.date))
+      - Math.exp(-RECENCY_DECAY * daysBetween(previous.date, last.date))) / RECENCY_DECAY;
+    observationDays += days;
+    weightedDays += weight;
+    weightedFlows += flow / days * weight;
+
+    // Modified Dietz: remove net purchases/sales from the change in value.
+    // Snapshots don't record trade timing, so assume flows occur mid-interval.
+    const capital = previous.portfolioCzk + flow / 2;
+    const gain = current.portfolioCzk - previous.portfolioCzk - flow;
+    const factor = capital > 0 ? 1 + gain / capital : NaN;
+    if (Number.isFinite(factor) && factor > 0) {
+      weightedLogReturns += Math.log(factor) / days * weight;
+      returnWeightedDays += weight;
+      returnDays += days;
+    }
+  }
+  const lastComplete = complete.at(-1);
+  const hasReliableHistory = observationDays >= MIN_TREND_DAYS
+    && returnDays >= MIN_TREND_DAYS
+    && !!lastComplete && daysBetween(lastComplete.date, last.date) <= MIN_TREND_DAYS;
+  const annualContributionCzk = hasReliableHistory ? weightedFlows / weightedDays * YEAR_DAYS : 0;
+  const monthlyContributionCzk = annualContributionCzk / 12;
+  const dailyLogReturn = hasReliableHistory ? weightedLogReturns / returnWeightedDays : 0;
+  const annualGrowthPercent = Math.expm1(dailyLogReturn * YEAR_DAYS) * 100;
+
   const projection: WealthTrendPoint[] = [last];
   let portfolioCzk = last.portfolioCzk;
   let investedCzk = last.investedCzk;
@@ -84,9 +106,15 @@ export function calculateWealthTrend(
     .sort((a, b) => a.effectiveAt.localeCompare(b.effectiveAt));
   let paymentIndex = 0;
   for (let step = 1; step <= years * 12; step++) {
-    portfolioCzk = Math.max(0, portfolioCzk + monthlyContributionCzk);
-    investedCzk = Math.max(0, investedCzk + monthlyContributionCzk);
     const projectionDate = addMonths(last.date, step);
+    const days = daysBetween(projection.at(-1)!.date, projectionDate);
+    const halfPeriodGrowth = Math.exp(dailyLogReturn * days / 2);
+    const valueBeforeFlow = portfolioCzk * halfPeriodGrowth;
+    const contribution = Math.max(-valueBeforeFlow, monthlyContributionCzk);
+    // New money participates in growth from the middle of each projected month.
+    portfolioCzk = Math.max(0, (valueBeforeFlow + contribution) * halfPeriodGrowth);
+    investedCzk = contribution >= 0 ? investedCzk + contribution
+      : valueBeforeFlow > 0 ? investedCzk * (1 + contribution / valueBeforeFlow) : 0;
     let scheduledPaymentCzk = 0;
     while (paymentIndex < payments.length && payments[paymentIndex].effectiveAt <= projectionDate) {
       scheduledPaymentCzk += payments[paymentIndex].amountCzk;
@@ -95,7 +123,7 @@ export function calculateWealthTrend(
     debtCzk = Math.max(0, debtCzk - scheduledPaymentCzk);
     projection.push({ date: projectionDate, portfolioCzk, investedCzk, netWorthCzk: portfolioCzk - debtCzk, debtCzk });
   }
-  return { history, projection, annualContributionCzk, annualGrowthPercent: 0, observationDays, hasReliableHistory };
+  return { history, projection, annualContributionCzk, annualGrowthPercent, observationDays, hasReliableHistory, minimumHistoryDays: MIN_TREND_DAYS };
 }
 
 function validPoint(point: WealthTrendInput) {
@@ -105,34 +133,28 @@ function validPoint(point: WealthTrendInput) {
 }
 
 function validDate(value: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`));
+  const timestamp = Date.parse(`${value}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(timestamp)
+    && new Date(timestamp).toISOString().slice(0, 10) === value;
 }
 
 function estimateExternalFlow(previous: { btcQuantity?: number; btcPriceCzk?: number; vwceShares?: number; vwcePriceCzk?: number }, current: { btcQuantity?: number; btcPriceCzk?: number; vwceShares?: number; vwcePriceCzk?: number }) {
-  const values = [previous.btcQuantity, previous.btcPriceCzk, previous.vwceShares, previous.vwcePriceCzk, current.btcQuantity, current.btcPriceCzk, current.vwceShares, current.vwcePriceCzk];
-  if (!values.every((value) => typeof value === "number" && Number.isFinite(value))) return null;
-  const btcMidPrice = (previous.btcPriceCzk! + current.btcPriceCzk!) / 2;
-  const vglaMidPrice = (previous.vwcePriceCzk! + current.vwcePriceCzk!) / 2;
-  return (current.btcQuantity! - previous.btcQuantity!) * btcMidPrice
-    + (current.vwceShares! - previous.vwceShares!) * vglaMidPrice;
-}
-
-function winsorizedMean(values: number[]) {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const lower = sorted[Math.floor((sorted.length - 1) * 0.1)];
-  const upper = sorted[Math.ceil((sorted.length - 1) * 0.9)];
-  return values.reduce((sum, value) => sum + Math.min(upper, Math.max(lower, value)), 0) / values.length;
+  const assetFlow = (before?: number, after?: number, beforePrice?: number, afterPrice?: number) => {
+    if (![before, after].every((value) => typeof value === "number" && Number.isFinite(value) && value >= 0)) return null;
+    // Unheld assets have no price in persisted snapshots; they need no price.
+    if (before === 0 && after === 0) return 0;
+    if ((before! > 0 && !(Number.isFinite(beforePrice) && beforePrice! > 0))
+      || (after! > 0 && !(Number.isFinite(afterPrice) && afterPrice! > 0))) return null;
+    const price = before === 0 ? afterPrice! : after === 0 ? beforePrice! : (beforePrice! + afterPrice!) / 2;
+    return (after! - before!) * price;
+  };
+  const btc = assetFlow(previous.btcQuantity, current.btcQuantity, previous.btcPriceCzk, current.btcPriceCzk);
+  const vgla = assetFlow(previous.vwceShares, current.vwceShares, previous.vwcePriceCzk, current.vwcePriceCzk);
+  return btc === null || vgla === null ? null : btc + vgla;
 }
 
 function daysBetween(first: string, last: string) {
   return Math.max(0, (Date.parse(`${last}T00:00:00Z`) - Date.parse(`${first}T00:00:00Z`)) / DAY_MS);
-}
-
-function monthsBetween(first: string, last: string) {
-  const [firstYear, firstMonth] = first.split("-").map(Number);
-  const [lastYear, lastMonth] = last.split("-").map(Number);
-  return Math.max(0, (lastYear - firstYear) * 12 + lastMonth - firstMonth);
 }
 
 function addMonths(isoDate: string, months: number) {
