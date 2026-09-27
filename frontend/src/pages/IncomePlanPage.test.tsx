@@ -165,46 +165,32 @@ describe('IncomePlanPage', () => {
     expect(screen.queryByRole('region', { name: 'Souhrn příjmu' })).not.toBeInTheDocument()
   })
 
-  it('reuses the purchase idempotency key and timestamp when recovering an interrupted BTC ledger write', async () => {
-    mockWorkflow(100, 0)
-    const user = userEvent.setup()
-    await renderPage('/income-plan?dialog=process')
-    const sent = await screen.findByRole('button', { name: 'Odesláno' })
-    await waitFor(() => expect(sent).toBeEnabled())
-    await user.click(sent)
-    await screen.findByText('BTC nakoupeno a zapsáno')
-    const ledger = () => vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/bitcoin/purchases'))
-    const original = ledger()[0][1]!
-    cleanup()
-    const key = 'finstrat:income-draft::samuel'
-    const saved = JSON.parse(sessionStorage.getItem(key)!)
-    sessionStorage.setItem(key, JSON.stringify({ ...saved, purchaseResult: null }))
-    await renderPage('/income-plan?dialog=process')
-    await screen.findByText('BTC nakoupeno a zapsáno')
-    expect(ledger()).toHaveLength(2)
-    expect(ledger()[1][1]?.headers).toEqual(original.headers)
-    expect(ledger()[1][1]?.body).toEqual(original.body)
-  })
-
-  it('resumes the existing deposit watch after refresh instead of resetting its baseline', async () => {
+  it('resumes a server deposit job after refresh without another purchase or browser ledger write', async () => {
     mockWorkflow(100, 0)
     const originalFetch = vi.mocked(fetch).getMockImplementation()!
-    let refreshed = false
+    let completed = false
     vi.mocked(fetch).mockImplementation(async (input, options) => {
-      if (!refreshed && String(input).endsWith('/income-plan/coinmate-balance-watch/resume-watch')) return new Promise<Response>(() => {})
+      const url = String(input)
+      if (url.endsWith('/income-plan/coinmate-bitcoin-purchase')) return { ok: true, status: 200, json: async () => ({ success: false, btcBought: 0, pending: true, status: 'waiting_deposit' }) } as Response
+      if (url.includes('/income-plan/coinmate-bitcoin-purchase/')) return { ok: true, status: 200, json: async () => ({ success: completed, btcBought: completed ? .001 : 0, pending: !completed, status: completed ? 'completed' : 'waiting_deposit' }) } as Response
       return originalFetch(input, options)
     })
     const user = userEvent.setup()
     await renderPage('/income-plan?dialog=process')
     const sent = await screen.findByRole('button', { name: 'Odesláno' })
-    await waitFor(() => expect(sent).toBeEnabled())
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('coinmate-bitcoin-purchase'))).toBe(false)
     await user.click(sent)
-    expect(await screen.findByText('Čekám na připsání CZK')).toBeInTheDocument()
+    expect(await screen.findByText(/Čekám na připsání CZK/)).toBeInTheDocument()
+    const requests = () => vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/income-plan/coinmate-bitcoin-purchase'))
+    expect(requests()).toHaveLength(1)
+    expect(JSON.parse(String(requests()[0][1]?.body))).toMatchObject({ waitForDeposit: true })
     cleanup()
-    refreshed = true
+    completed = true
     await renderPage('/income-plan?dialog=process')
     expect(await screen.findByText('BTC nakoupeno a zapsáno')).toBeInTheDocument()
-    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/income-plan/coinmate-balance-watch'))).toHaveLength(1)
+    expect(requests()).toHaveLength(1)
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/bitcoin/purchases'))).toBe(false)
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('coinmate-balance-watch'))).toBe(false)
   })
 
   it('retries an interrupted debt write with the original request identity after refresh', async () => {
@@ -251,7 +237,7 @@ describe('IncomePlanPage', () => {
     expect(within(debtRow).getAllByText(/5[  ]000[  ]Kč/).length).toBeGreaterThan(0)
   })
 
-  it('waits for Coinmate, buys BTC, and records the calculated purchase in the Coinmate account', async () => {
+  it('registers a deposit job only after Sent and lets the server record BTC', async () => {
     vi.mocked(fetch).mockImplementation(async (input, options) => {
       const url = String(input)
       if (url.endsWith('/income-plan/overview')) return { ok: true, status: 200, json: async () => ({ settings: { defaultCapitalCzk: 10000, withoutDebtBtcPercent: 85, withoutDebtCashPercent: 15, withDebtBtcPercent: 40, withDebtDebtPercent: 50, withDebtCashPercent: 10, deferredDebtPaymentCzk: 0, ...paymentSettings }, debts: [] }) } as Response
@@ -278,8 +264,7 @@ describe('IncomePlanPage', () => {
     expect(within(btcRow).queryByRole('button', { name: /platební údaje/i })).not.toBeInTheDocument()
     const sent = within(btcRow).getByRole('button', { name: 'Odesláno' })
     await waitFor(() => expect(sent).toBeEnabled())
-    expect(vi.mocked(fetch).mock.calls.some(([url, request]) => String(url).endsWith('/income-plan/coinmate-balance-watch') && request?.method === 'POST')).toBe(true)
-    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url, request]) => String(url).endsWith('/income-plan/coinmate-balance-watch/watch-1') && request?.method === undefined)).toBe(true))
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('coinmate-balance-watch'))).toBe(false)
     expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/income-plan/coinmate-bitcoin-purchase'))).toBe(false)
     await user.click(sent)
     expect(document.querySelector('.income-debt-workflow')).not.toBeInTheDocument()
@@ -291,9 +276,10 @@ describe('IncomePlanPage', () => {
     expect(cashRow).toHaveAttribute('data-expanded', 'false')
     expect(within(screen.getByRole('list', { name: 'Průběh zpracování příjmu' })).getByText('Odeslání potvrzeno')).toBeInTheDocument()
     expect(await within(btcRow).findByText('BTC nakoupeno a zapsáno')).toBeInTheDocument()
-    const purchaseCall = vi.mocked(fetch).mock.calls.find(([url, request]) => String(url).endsWith('/bitcoin/purchases') && request?.method === 'POST')
+    const purchaseCall = vi.mocked(fetch).mock.calls.find(([url, request]) => String(url).endsWith('/income-plan/coinmate-bitcoin-purchase') && request?.method === 'POST')
     expect(purchaseCall?.[1]?.headers).toMatchObject({ 'Idempotency-Key': expect.any(String), 'X-CSRF-TOKEN': 'csrf' })
-    expect(JSON.parse(String(purchaseCall?.[1]?.body))).toMatchObject({ accountId: 'coinmate-account', quantityBtc: '0.00425000', unitPriceCzk: '2000000.00', note: 'Automatický nákup z Income plánu' })
+    expect(JSON.parse(String(purchaseCall?.[1]?.body))).toEqual({ amountCzk: '8500.00', waitForDeposit: true })
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/bitcoin/purchases'))).toBe(false)
     const closingShell = btcRow.querySelector('.income-btc-processing-shell') as HTMLElement
     expect(closingShell).toHaveClass('closing')
     expect(btcRow).toHaveAttribute('data-expanded', 'true')
@@ -385,14 +371,14 @@ describe('IncomePlanPage', () => {
     expect(await screen.findByText('BTC nakoupeno a zapsáno')).toBeInTheDocument()
   })
 
-  it('keeps debt processing available when the BTC ledger write fails', async () => {
+  it('keeps debt processing available when server queue registration fails', async () => {
     vi.mocked(fetch).mockImplementation(async (input, options) => {
       const url = String(input)
       if (url.endsWith('/income-plan/overview')) return { ok: true, status: 200, json: async () => ({ settings: { defaultCapitalCzk: 1000, withoutDebtBtcPercent: 85, withoutDebtCashPercent: 15, withDebtBtcPercent: 40, withDebtDebtPercent: 50, withDebtCashPercent: 10, deferredDebtPaymentCzk: 0, ...paymentSettings }, debts: [{ id: 'loan', name: 'Nezávislý dluh', priority: 5, balanceCzk: 1000 }] }) } as Response
       if (url.endsWith('/identity/antiforgery')) return { ok: true, status: 200, json: async () => ({ token: 'csrf' }) } as Response
       if (url.endsWith('/income-plan/coinmate-balance-watch') && options?.method === 'POST') return { ok: true, status: 200, json: async () => ({ watchId: 'watch-error', currency: 'czk', initialBalance: 100, expiresInSeconds: 30 }) } as Response
       if (url.endsWith('/income-plan/coinmate-balance-watch/watch-error') && options?.method === undefined) return { ok: true, status: 200, json: async () => ({ changed: true, currency: 'czk', balance: 500 }) } as Response
-      if (url.endsWith('/income-plan/coinmate-bitcoin-purchase') && options?.method === 'POST') return { ok: true, status: 200, json: async () => ({ success: true, btcBought: 0.0002, status: 'filled', pending: false }) } as Response
+      if (url.endsWith('/income-plan/coinmate-bitcoin-purchase') && options?.method === 'POST') throw new Error('Server unavailable')
       if (url.endsWith('/btc-price')) return { ok: true, status: 200, json: async () => ({ priceCzk: 2000000 }) } as Response
       if (url.endsWith('/bitcoin/overview')) return { ok: true, status: 200, json: async () => ({ accounts: [] }) } as Response
       return { ok: true, status: 200, json: async () => ({ id: 'samuel', isDefault: false, displayName: 'Samuel' }) } as Response
@@ -403,7 +389,7 @@ describe('IncomePlanPage', () => {
     await waitFor(() => expect(sent).toBeEnabled())
     await user.click(sent)
     expect(await screen.findByText('Nezávislý dluh', { selector: '.income-debt-current strong' })).toBeInTheDocument()
-    expect(await screen.findByText('Nákup BTC se nepodařilo dokončit')).toBeInTheDocument()
+    expect(await screen.findByText('Sledování vkladu se nepodařilo uložit. Zkuste to znovu.')).toBeInTheDocument()
     expect(screen.getByText('Bitcoin', { selector: '.income-envelope-copy > strong' }).closest('.income-flow-row')).toHaveAttribute('data-expanded', 'true')
   })
 
@@ -425,6 +411,8 @@ describe('IncomePlanPage', () => {
     const user = userEvent.setup()
     const router = await renderPage('/income-plan?dialog=process')
     await screen.findByRole('button', { name: 'Odesláno' })
+    await user.clear(screen.getByRole('textbox', { name: 'Volný kapitál' }))
+    await user.type(screen.getByRole('textbox', { name: 'Volný kapitál' }), '1000')
     expect(sessionStorage.getItem('finstrat:income-draft::samuel')).not.toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Zrušit zpracování' }))

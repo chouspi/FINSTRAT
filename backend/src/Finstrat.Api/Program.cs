@@ -92,6 +92,8 @@ builder.Services.AddScoped<VwceCommandService>();
 builder.Services.AddScoped<DebtQueryService>();
 builder.Services.AddScoped<DebtCommandService>();
 builder.Services.AddScoped<IncomePlanService>();
+builder.Services.AddScoped<CoinmatePurchaseJobs>();
+builder.Services.AddHostedService<CoinmatePurchaseWorker>();
 builder.Services.AddScoped<StrategyService>();
 builder.Services.AddScoped<TaxesService>();
 builder.Services.AddScoped<WealthSnapshotService>();

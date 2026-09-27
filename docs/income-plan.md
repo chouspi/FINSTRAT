@@ -61,3 +61,45 @@ vyčlenění peněz; skutečný nákup a čerpání poolu zůstávají v tabu VG
 Úpravy odložených splátek přijímají volitelný Idempotency-Key. Klient jej ukládá
 před odesláním. Opakování stejné operace vrací původní výsledek atomicky uložený
 s úpravou zůstatku; stejný klíč s jinými parametry server odmítne.
+
+## Serverove API nakupy Coinmate
+
+`POST /api/income-plan/coinmate-bitcoin-purchase` se stabilnim `Idempotency-Key`
+uklada trvalou ulohu do PostgreSQL. Telo obsahuje `amountCzk`, volitelne
+`accountId` vlastniho uctu Coinmate a `waitForDeposit` (vychozi `false`).
+Income posila `waitForDeposit: true` az po kliknuti na **Odeslano**. Server v te
+chvili nacte CZK zustatek a vyzaduje jeho narust o celou ocekavanou castku.
+Pro sledovani pouziva normalizovany zustatek (`funding_balance/czk`): skutecny
+CZK zustatek plus skutecne debety vsech maker nakupu controlleru. Vlastni
+souběžny API nakup tak neskryje pripis dalsiho vkladu. Controller overuje
+stabilitu snapshotu zustatku a plneni pred vracenim hodnoty.
+Pouhe otevreni QR formulare sledovani ani nakup nespousti. Kontrola zustatku
+neni identifikace konkretni bankovni platby; externi obchody nebo vybery mohou
+rozpoznani vkladu oddalit. Vice cekajicich vkladu ma kumulativni cil, aby stejny
+narust zustatku nepotvrdil dva vklady.
+
+Worker po 5 sekundach obnovuje stav a po pripisu spusti controller. Ten pouziva
+vyhradne `buyLimit`, `postOnly=1`, cenu jeden cenovy krok pod nejlepsi prodejni
+nabidkou a kazdych 30 sekund rusi zbytek a precenuje podle aktualniho trhu
+(vc. pohybu nahoru). Rozpocet zustava pevny vcetne rezervy na maker poplatek
+nejvyse 0,4 %. Po zruseni musi byt potvrzen konec puvodniho prikazu vcetne
+poslednich plneni, teprve potom muze vzniknout dalsi. Nejisty vysledek odeslani
+se pouze dohledava; automaticke opakovani bez potvrzeni je zakazano.
+
+`GET /api/income-plan/coinmate-purchase-requirements` poskytuje aktualni minimum
+v BTC i CZK a maximalni rozpocet controlleru. Minimum pochazi z Coinmate
+`tradingPairs.minAmount`, cena a presnost take z burzy; pevny limit 25 Kc neni
+pouzity. Server kontroluje limit pred prijetim nove ulohy a controller znovu
+pred kazdou objednavkou. Podlimitni zbytek po nakupu zustava v CZK.
+
+`GET /api/income-plan/coinmate-bitcoin-purchases` vraci jen aktivni ulohy
+aktualniho uzivatele (vcetne cekani na vklad a opakovaneho zapisu pri chybe).
+BTC tab je zobrazuje pres **API nakupy**. Detail je dostupny pres
+`GET /api/income-plan/coinmate-bitcoin-purchase/{id}`. Dokoncene ulohy se v
+seznamu nezobrazuji, ale zustavaji v DB kvuli idempotenci a auditu.
+
+Po dokonceni worker idempotentne vytvori BTC lot s mnozstvim a skutecnou cenou
+vcetne poplatku podle jednotlivych plneni. Cena se neodvozuje z celeho rozpoctu
+ani z rozdilu zustatku. Datum je cas posledniho plneni; prohlizec neprovadi
+ucetni zapis. Ulozeny vysledek a stejny idempotency klic umoznuji bezpecne
+zopakovat zapis po padu mezi ulozenim lotu a dokoncenim ulohy.

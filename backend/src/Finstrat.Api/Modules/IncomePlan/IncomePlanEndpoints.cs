@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.Globalization;
 using Finstrat.Api.Modules.Identity;
 using Finstrat.Api.Modules.Identity.Domain;
 using Microsoft.AspNetCore.Identity;
@@ -88,37 +87,46 @@ public static class IncomePlanEndpoints
             catch (CoinmateBalanceWatchNotFoundException) { return Results.NotFound(); }
             catch (CoinmateBalanceWatchUnavailableException) { return Unavailable(); }
         });
-        group.MapPost("/coinmate-bitcoin-purchase", async (
-            CoinmateBitcoinPurchaseRequest request, HttpContext context,
-            CoinmateBalanceWatchService service, CancellationToken cancellationToken) =>
+        group.MapGet("/coinmate-purchase-requirements", async (CoinmateBalanceWatchService service, CancellationToken cancellationToken) =>
         {
-            if (!Guid.TryParse(context.Request.Headers["Idempotency-Key"], out var idempotencyKey))
+            try
             {
-                return Results.ValidationProblem(new Dictionary<string, string[]>
-                {
-                    ["idempotencyKey"] = ["Idempotency-Key header must be a valid UUID."],
-                });
+                var limits = await service.GetPurchaseRequirementsAsync(cancellationToken);
+                return Results.Ok(new { limits.MinAmountCzk, limits.MinAmountBtc, limits.MaxAmountCzk });
             }
-            if (!decimal.TryParse(request.AmountCzk, NumberStyles.Number, CultureInfo.InvariantCulture,
-                    out var amount) || amount <= 0 || decimal.Round(amount, 2) != amount)
+            catch (CoinmateBalanceWatchUnavailableException) { return PurchaseUnavailable(); }
+        });
+        group.MapPost("/coinmate-bitcoin-purchase", async (
+            QueueCoinmatePurchaseRequest request, HttpContext context,
+            ClaimsPrincipal principal, UserManager<ApplicationUser> users,
+            CoinmatePurchaseJobs jobs, CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(context.Request.Headers["Idempotency-Key"], out var key))
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["idempotencyKey"] = ["Idempotency-Key musí být UUID."] });
+            try
             {
-                return Results.ValidationProblem(new Dictionary<string, string[]>
-                {
-                    ["amountCzk"] = ["Amount must be positive and have at most two decimal places."],
-                });
+                var (household, user) = Context(principal, users);
+                return Results.Ok(await jobs.QueueAsync(household, user, key, request, cancellationToken));
             }
-
-            try { return Results.Ok(await service.PurchaseBitcoinAsync(amount, idempotencyKey, cancellationToken)); }
+            catch (IncomePlanValidationException ex)
+            { return Results.ValidationProblem(new Dictionary<string, string[]> { ["purchase"] = [ex.Message] }); }
             catch (CoinmateBalanceWatchNotFoundException) { return PurchaseUnavailable(); }
             catch (CoinmateBalanceWatchUnavailableException) { return PurchaseUnavailable(); }
         }).AddEndpointFilter<AntiforgeryEndpointFilter>();
-        group.MapGet("/coinmate-bitcoin-purchase/{idempotencyKey:guid}", async (
-            Guid idempotencyKey, CoinmateBalanceWatchService service,
-            CancellationToken cancellationToken) =>
+        group.MapGet("/coinmate-bitcoin-purchases", async (
+            ClaimsPrincipal principal, UserManager<ApplicationUser> users,
+            CoinmatePurchaseJobs jobs, CancellationToken cancellationToken) =>
         {
-            try { return Results.Ok(await service.GetBitcoinPurchaseAsync(idempotencyKey, cancellationToken)); }
-            catch (CoinmateBalanceWatchNotFoundException) { return Results.NotFound(); }
-            catch (CoinmateBalanceWatchUnavailableException) { return PurchaseUnavailable(); }
+            var (household, user) = Context(principal, users);
+            return Results.Ok(await jobs.ListAsync(household, user, cancellationToken));
+        });
+        group.MapGet("/coinmate-bitcoin-purchase/{idempotencyKey:guid}", async (
+            Guid idempotencyKey, ClaimsPrincipal principal, UserManager<ApplicationUser> users,
+            CoinmatePurchaseJobs jobs, CancellationToken cancellationToken) =>
+        {
+            var (household, user) = Context(principal, users);
+            var job = await jobs.GetAsync(household, user, idempotencyKey, cancellationToken);
+            return job is null ? Results.NotFound() : Results.Ok(job);
         });
         return endpoints;
     }
@@ -144,5 +152,4 @@ public static class IncomePlanEndpoints
          Guid.Parse(users.GetUserId(principal) ?? throw new InvalidOperationException("Missing user.")));
 }
 
-public sealed record CoinmateBitcoinPurchaseRequest(string AmountCzk);
 public sealed record CoinmateCzkBalanceResponse(decimal BalanceCzk);

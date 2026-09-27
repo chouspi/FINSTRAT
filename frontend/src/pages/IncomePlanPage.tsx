@@ -42,12 +42,9 @@ type Settings = {
 type PlanDebt = { id: string; name: string; priority: number; balanceCzk: number };
 type Overview = { settings: Settings; debts: PlanDebt[]; scheduledDebtPaymentCzk?: number; deferredVwceCzk?: number };
 type CurrentUser = { id: string; householdId?: string; isDefault: boolean };
-type BalanceWatch = { watchId: string; currency: "czk"; initialBalance: number; expiresInSeconds: number };
-type BalanceWatchResult = { changed: boolean; currency: "czk"; balance: number };
 type WatchState = { watchId: string; phase: "idle" | "starting" | "ready" | "waiting" | "confirmed" | "error"; error: string };
 type DebtPaymentPlan = { debt: PlanDebt; amount: number; freshAmount: number; deferredAmount: number };
 type CoinmatePurchaseResult = { success: boolean; btcBought: number; status: string; pending: boolean };
-type BitcoinPurchaseOverview = { accounts: { id: string; name: string; canManage: boolean }[] };
 
 type IncomeDraft = {
   version: 1;
@@ -65,6 +62,7 @@ type IncomeDraft = {
   vwceDone: boolean;
   watch: WatchState | null;
   purchaseStarted: boolean;
+  apiQueued?: boolean;
   purchaseResult: CoinmatePurchaseResult | null;
   ledgerKey: string;
   paymentKeys: Record<string, string>;
@@ -236,76 +234,6 @@ function CashPaymentQr({ amountCzk, iban, onComplete }: { amountCzk: number; iba
   </div>;
 }
 
-function useCoinmateBalanceWatch(active: boolean, waiting: boolean, restored: WatchState | null, onChange: (watch: WatchState) => void) {
-  const [attempt, setAttempt] = useState(0);
-  const [watch, setWatch] = useState<WatchState>(() => restored ?? (active
-    ? { watchId: "", phase: "starting", error: "" }
-    : { watchId: "", phase: "idle", error: "" }));
-
-  useEffect(() => {
-    if (!active || (attempt === 0 && restored && restored.phase !== "starting" && restored.phase !== "idle")) return;
-    let current = true;
-    void (async () => {
-      try {
-        const token = await antiforgeryToken();
-        const created = await apiRequest<BalanceWatch>("/api/income-plan/coinmate-balance-watch", {
-          method: "POST",
-          headers: { "X-CSRF-TOKEN": token },
-        });
-        if (current) setWatch({ watchId: created.watchId, phase: "ready", error: "" });
-      } catch (error) {
-        if (current) setWatch({ watchId: "", phase: "error", error: error instanceof Error ? error.message : "Sledování zůstatku se nepodařilo spustit." });
-      }
-    })();
-    return () => { current = false; };
-  }, [active, attempt, restored]);
-
-  useEffect(() => {
-    if (!active || !watch.watchId || watch.phase === "confirmed" || watch.phase === "error") return;
-    const heartbeat = window.setInterval(() => {
-      void (async () => {
-        try {
-          const token = await antiforgeryToken();
-          await apiRequest(`/api/income-plan/coinmate-balance-watch/${watch.watchId}/ping`, { method: "POST", headers: { "X-CSRF-TOKEN": token } });
-        } catch { /* The waiting request owns the terminal watcher result. */ }
-      })();
-    }, 10_000);
-    return () => window.clearInterval(heartbeat);
-  }, [active, watch.watchId, watch.phase]);
-
-  useEffect(() => {
-    if (!active || !watch.watchId || watch.phase === "confirmed" || watch.phase === "error") return;
-    const controller = new AbortController();
-    let current = true;
-    void (async () => {
-      try {
-        const result = await apiRequest<BalanceWatchResult>(`/api/income-plan/coinmate-balance-watch/${watch.watchId}`, { signal: controller.signal });
-        if (!result.changed) throw new Error("Sledování připsání CZK vypršelo.");
-        if (current) setWatch((value) => ({ ...value, phase: "confirmed", error: "" }));
-      } catch (error) {
-        if (current) setWatch({ watchId: "", phase: "error", error: error instanceof Error ? error.message : "Připsání CZK se nepodařilo ověřit." });
-      }
-    })();
-    return () => { current = false; controller.abort(); };
-  }, [active, watch.watchId, watch.phase]);
-
-  useEffect(() => { if (active) onChange(watch); }, [active, watch, onChange]);
-
-  const visibleWatch = !active
-    ? { watchId: "", phase: "idle", error: "" } as WatchState
-    : waiting && watch.phase === "ready"
-      ? { ...watch, phase: "waiting" as const }
-      : watch;
-
-  return {
-    watch: visibleWatch,
-    retry: () => {
-      setWatch({ watchId: "", phase: "starting", error: "" });
-      setAttempt((value) => value + 1);
-    },
-  };
-}
-
 function IncomePlanContent({ initial: latestOverview, canManage, processing, storageKey, onNewRun, onCancel }: { initial: Overview; canManage: boolean; processing: boolean; storageKey: string | null; onNewRun: () => void; onCancel: () => void }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState(() => readDraft(storageKey, latestOverview));
@@ -326,8 +254,6 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
     debtPayments, processedDebtIds, cashStep, localDeferredBalance, capital, vwceDone } = draft;
   const initial = processingOverview ?? latestOverview;
   const [btcStep, setBtcStep] = useState<"idle" | "qr" | "closing" | "waiting">(btcSent ? "waiting" : processing ? "qr" : "idle");
-  const [restoredWatch] = useState(draft.watch);
-  const saveWatch = useCallback((watch: WatchState) => { updateDraft({ watch }); }, [updateDraft]);
   const settings = initial.settings;
   const hasDebts = initial.debts.length > 0;
   const amount = parseCzkInput(capital);
@@ -362,7 +288,6 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
     .filter((payment) => payment.amount > .005);
   const eligibleDebtCount = initial.debts.filter((debt) => debt.priority > 0).length;
   const allocatedDebt = [...allocations.values()].reduce((sum, value) => sum + value, 0);
-  const balanceWatch = useCoinmateBalanceWatch(processing && directBtcAmount > .005 && !draft.purchaseStarted && !draft.purchaseResult, btcSent, restoredWatch, saveWatch);
   const coinmateLedgerKey = useRef(draft.ledgerKey);
   const btcPurchaseStarted = useRef(false);
   const saveCapital = useMutation({
@@ -383,41 +308,32 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
     mutationFn: async ({ amountCzk }: { amountCzk: number }) => {
       if (!updateDraft({ purchaseStarted: true })) throw new Error("Průběh nákupu nelze uložit.");
       const csrf = await antiforgeryToken();
-      let trade = await apiRequest<CoinmatePurchaseResult>("/api/income-plan/coinmate-bitcoin-purchase", {
+      return apiRequest<CoinmatePurchaseResult>("/api/income-plan/coinmate-bitcoin-purchase", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrf, "Idempotency-Key": coinmateLedgerKey.current },
-        body: JSON.stringify({ amountCzk: amountCzk.toFixed(2) }),
+        body: JSON.stringify({ amountCzk: amountCzk.toFixed(2), waitForDeposit: true }),
       });
-      while (trade.pending) {
-        await new Promise((resolve) => window.setTimeout(resolve, 2_000));
-        trade = await apiRequest<CoinmatePurchaseResult>(`/api/income-plan/coinmate-bitcoin-purchase/${coinmateLedgerKey.current}`);
-      }
-      if (!trade.success || trade.btcBought <= 0) throw new Error(`Coinmate nákup skončil stavem ${trade.status}.`);
-
-      const bitcoin = await apiRequest<BitcoinPurchaseOverview>("/api/bitcoin/overview");
-      const coinmateAccount = bitcoin.accounts.find((account) => account.canManage && account.name.trim().toLocaleLowerCase("cs-CZ") === "coinmate");
-      if (!coinmateAccount) throw new Error("BTC účet Coinmate nebyl nalezen.");
-      const unitPriceCzk = amountCzk / trade.btcBought;
-      const token = await antiforgeryToken();
-      await apiRequest("/api/bitcoin/purchases", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token, "Idempotency-Key": coinmateLedgerKey.current },
-        body: JSON.stringify({
-          accountId: coinmateAccount.id,
-          quantityBtc: trade.btcBought.toFixed(8),
-          unitPriceCzk: unitPriceCzk.toFixed(2),
-          acquiredAt: draftRef.current.acquiredAt,
-          txid: null,
-          note: "Automatický nákup z Income plánu",
-        }),
-      });
-      return { ...trade, unitPriceCzk };
     },
     onSuccess: async (result) => {
-      updateDraft({ purchaseResult: result });
-      await queryClient.invalidateQueries({ queryKey: ["bitcoin"] });
+      updateDraft({ apiQueued: true, purchaseResult: result.success ? result : null });
+      await queryClient.invalidateQueries({ queryKey: ["coinmate", "api-purchases"] });
     },
   });
+  const purchaseStatus = useQuery({
+    queryKey: ["coinmate", "purchase", draft.ledgerKey],
+    queryFn: () => apiRequest<CoinmatePurchaseResult>(`/api/income-plan/coinmate-bitcoin-purchase/${coinmateLedgerKey.current}`),
+    enabled: !!draft.apiQueued && !draft.purchaseResult,
+    refetchInterval: (query) => query.state.data?.pending === false ? false : 5_000,
+    retry: false,
+  });
+  useEffect(() => {
+    if (purchaseStatus.data?.success && !draft.purchaseResult) {
+      // Persist the server result so refresh restores the completed income step.
+      // oxlint-disable-next-line react/set-state-in-effect
+      updateDraft({ purchaseResult: purchaseStatus.data });
+      void queryClient.invalidateQueries({ queryKey: ["bitcoin"] });
+    }
+  }, [purchaseStatus.data, draft.purchaseResult, updateDraft, queryClient]);
   const startBtcPurchase = btcPurchase.mutate;
   const adjustmentKey = (operation: string) => {
     const saved = draftRef.current.paymentKeys[operation];
@@ -514,42 +430,32 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
   };
 
   useEffect(() => {
-    if ((balanceWatch.watch.phase !== "confirmed" && !draft.purchaseStarted) || btcAmountToProcess <= .005 || btcPurchaseStarted.current || draft.purchaseResult) return;
+    if (!btcSent || btcAmountToProcess <= .005 || btcPurchaseStarted.current || draft.apiQueued || draft.purchaseResult) return;
     btcPurchaseStarted.current = true;
     startBtcPurchase({ amountCzk: btcAmountToProcess });
-  }, [balanceWatch.watch.phase, btcAmountToProcess, startBtcPurchase, draft.purchaseStarted, draft.purchaseResult]);
+  }, [btcSent, btcAmountToProcess, startBtcPurchase, draft.apiQueued, draft.purchaseResult]);
 
-  const btcStatusPhase = btcPurchase.isError
-    ? "error"
-    : (btcPurchase.isSuccess || !!draft.purchaseResult)
-      ? "confirmed"
-      : btcPurchase.isPending
-        ? "waiting"
-        : balanceWatch.watch.phase;
-  const btcStatusText = btcPurchase.isError
-    ? "Nákup BTC se nepodařilo dokončit"
-    : (btcPurchase.isSuccess || !!draft.purchaseResult)
-      ? "BTC nakoupeno a zapsáno"
-      : btcPurchase.isPending
-        ? "Nakupuji BTC na Coinmate"
-        : balanceWatch.watch.phase === "starting"
-          ? "Připravuji sledování připsání CZK"
-          : balanceWatch.watch.phase === "waiting"
-            ? "Čekám na připsání CZK"
-            : balanceWatch.watch.phase === "confirmed"
-              ? "Připsání CZK potvrzeno"
-              : "Kontrola připsání CZK selhala";
+  const btcFinished = !!draft.purchaseResult?.success;
+  const btcStatusPhase = btcPurchase.isError || purchaseStatus.isError || purchaseStatus.data?.status === "rejected"
+    ? "error" : btcFinished ? "confirmed" : btcSent ? "waiting" : "idle";
+  const btcStatusText = btcPurchase.isError ? "Sledování vkladu se nepodařilo uložit. Zkuste to znovu."
+    : purchaseStatus.isError ? "Stav nelze načíst. Server pokračuje ve zpracování."
+    : btcFinished ? "BTC nakoupeno a zapsáno"
+    : purchaseStatus.data?.status === "rejected" ? "Nákup se neprovedl. Zkontrolujte částku a Coinmate účet."
+    : !draft.apiQueued ? "Ukládám sledování vkladu na server"
+    : !purchaseStatus.data || purchaseStatus.data.status === "waiting_deposit" ? "Čekám na připsání CZK · sledování běží na serveru"
+    : "Probíhá limitní nákup · podrobnosti v Bitcoin → API nákupy";
 
   const workflowSteps = [
     ...(vwceAmount > .005 ? [{ label: "VGLA", state: vwceDone ? "Vyčleněno" : "Vyčlenit částku", done: vwceDone }] : []),
-    ...(directBtcAmount > .005 ? [{ label: "Bitcoin", state: (btcPurchase.isSuccess || !!draft.purchaseResult) ? "Hotovo" : btcStatusPhase === "error" ? "Vyžaduje pozornost" : btcPurchase.isPending ? "Probíhá nákup" : btcSent ? "Vklad odeslán" : "Odeslat vklad", done: (btcPurchase.isSuccess || !!draft.purchaseResult) }] : []),
+    ...(directBtcAmount > .005 ? [{ label: "Bitcoin", state: btcFinished ? "Hotovo" : btcStatusPhase === "error" ? "Vyžaduje pozornost" : btcPurchase.isPending ? "Probíhá nákup" : btcSent ? "Vklad odeslán" : "Odeslat vklad", done: btcFinished }] : []),
     ...(candidateDebtPayments.length > 0 || debtPayments.length > 0 ? [{ label: "Splátky", state: debtStep === "complete" ? (processedDebtIds.length < debtPayments.length ? "Odloženo" : "Zapsáno") : debtStep === "active" ? `${processedDebtIds.length} / ${debtPayments.length} zapsáno` : "Čeká", done: debtStep === "complete" }] : []),
     ...(allocation.cashAmount > .005 ? [{ label: "Spending", state: cashStep === "complete" ? "Odeslání potvrzeno" : cashStep === "active" ? "Odeslat převod" : "Čeká", done: cashStep === "complete" }] : []),
   ];
 
   return <section className={`income-page${processing ? " income-page--processing" : ""}`}>
     {processing && <div className="income-workflow-header"><ol className="income-workflow-progress" aria-label="Průběh zpracování příjmu">{workflowSteps.map((step, index) => <li key={step.label} className={step.done ? "is-complete" : ""}><span className="income-workflow-number" aria-hidden="true">{step.done ? <Check size={16} /> : index + 1}</span><div><strong>{step.label}</strong><span>{step.state}</span></div></li>)}</ol><button className="income-cancel-processing" type="button" onClick={onCancel}><X size={15} />Zrušit zpracování</button></div>}
-    {processing && btcSent && (vwceAmount <= .005 || vwceDone) && cashStep === "complete" && <div className="income-completion" role="status"><Check size={18} /><span>{directBtcAmount > .005 && !(btcPurchase.isSuccess || !!draft.purchaseResult) ? "Převody potvrzeny. Stav nákupu BTC sledujte v kartě Bitcoin." : "Zpracování příjmu dokončeno."}</span></div>}
+    {processing && btcSent && (vwceAmount <= .005 || vwceDone) && cashStep === "complete" && <div className="income-completion" role="status"><Check size={18} /><span>{directBtcAmount > .005 && !btcFinished ? "Převody potvrzeny. Stav nákupu BTC sledujte v kartě Bitcoin." : "Zpracování příjmu dokončeno."}</span></div>}
     {processing && btcSent && cashStep === "complete" && (vwceAmount <= .005 || vwceDone) && <section className="income-run-summary" aria-label="Souhrn příjmu">
       <h2>Souhrn příjmu</h2><dl>
         {directBtcAmount > .005 && <div><dt>Bitcoin · {draft.purchaseResult ? "nakoupeno" : "čeká na dokončení"}</dt><dd>{czk.format(btcAmountToProcess)}</dd></div>}
@@ -558,7 +464,7 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
         {debtPayments.some((payment) => !processedDebtIds.includes(payment.debt.id)) && <div><dt>Odložené splátky</dt><dd>{czk.format(debtPayments.filter((payment) => !processedDebtIds.includes(payment.debt.id)).reduce((sum, payment) => sum + payment.amount, 0))}</dd></div>}
         {scheduledApplied > .005 && <div><dt>Ponecháno na pravidelné splátky</dt><dd>{czk.format(scheduledApplied)}</dd></div>}
         {allocation.cashAmount > .005 && <div><dt>Spending · odeslání potvrzeno</dt><dd>{czk.format(cashAmountToProcess ?? allocation.cashAmount)}</dd></div>}
-      </dl><button className="income-debt-processed" type="button" disabled={directBtcAmount > .005 && !draft.purchaseResult} onClick={onNewRun}>Nový příjem</button>
+      </dl><button className="income-debt-processed" type="button" disabled={directBtcAmount > .005 && !draft.apiQueued && !draft.purchaseResult} onClick={onNewRun}>Nový příjem</button>
     </section>}
     <div className="income-hero">
       <div className="income-capital">
@@ -568,7 +474,7 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
       <div className="income-distribution" aria-label="Rozdělení příjmu">
         <span className="income-vault-feed" aria-hidden="true" />
         {rows.map((row, index) => {
-          const btcHasVisibleStatus = btcSent && btcStatusPhase !== "idle" && btcStatusPhase !== "ready";
+          const btcHasVisibleStatus = btcSent && btcStatusPhase !== "idle";
           const expanded = (processing && row.key === "vwce" && !vwceDone) || ((directBtcAmount > .005 && (vwceAmount <= .005 || vwceDone)) && (btcStep === "qr" || btcStep === "closing" || btcHasVisibleStatus) && row.key === "btc") || (debtStep === "active" && row.key === "debt") || (cashStep === "active" && row.key === "cash");
           return <div className={`income-distribution-row${index === 0 ? " first" : ""}${index === rows.length - 1 ? " last" : ""}${expanded ? " income-distribution-row--expanded" : ""}`} key={row.key}>
             <div className="income-vault-branch income-vault-branches" aria-hidden="true"><b>{row.percent} %</b></div>
@@ -576,10 +482,11 @@ function IncomePlanContent({ initial: latestOverview, canManage, processing, sto
               <div className="income-flow-icon"><row.icon size={17} /></div>
               <div className="income-envelope-copy"><strong>{row.label}</strong>{row.key === "debt" && scheduledDebtPayment > 0 ? <div className="income-debt-split"><span><em>Pravidelné splátky</em><b>{validAmount ? czk.format(scheduledApplied) : "—"}</b></span><span><em>Předčasné splátky</em><b>{validAmount ? czk.format(debtBudget) : "—"}</b></span></div> : <span>{row.note}</span>}</div>
               <div className="income-envelope-value"><output>{validAmount ? czk.format(row.amount) : "—"}</output><b>{row.percent} %</b></div>
-              {row.key === "btc" && directBtcAmount > .005 && (vwceAmount <= .005 || vwceDone) && (btcStep === "qr" || btcStep === "closing") && <CoinmatePaymentQr amountCzk={row.amount} settings={settings} closing={btcStep === "closing"} watchStarting={balanceWatch.watch.phase === "starting"} onSent={startAfterBtcSent} onClosed={() => setBtcStep("waiting")} />}
-              {row.key === "btc" && processing && btcSent && directBtcAmount > .005 && btcStatusPhase !== "idle" && btcStatusPhase !== "ready" && <div className={`income-btc-watch income-btc-watch--${btcStatusPhase}`} role="status">
+              {row.key === "btc" && directBtcAmount > .005 && (vwceAmount <= .005 || vwceDone) && (btcStep === "qr" || btcStep === "closing") && <CoinmatePaymentQr amountCzk={row.amount} settings={settings} closing={btcStep === "closing"} watchStarting={btcPurchase.isPending} onSent={startAfterBtcSent} onClosed={() => setBtcStep("waiting")} />}
+              {row.key === "btc" && processing && btcSent && directBtcAmount > .005 && btcStatusPhase !== "idle" && <div className={`income-btc-watch income-btc-watch--${btcStatusPhase}`} role="status">
                 <span>{btcStatusText}</span>
-                {balanceWatch.watch.phase === "error" && <button type="button" onClick={balanceWatch.retry}>Zkusit znovu</button>}
+                {purchaseStatus.isError && <button type="button" onClick={() => void purchaseStatus.refetch()}>Načíst stav znovu</button>}
+                {btcPurchase.isError && <span>{btcPurchase.error.message}</span>}
                 {btcPurchase.isError && <button type="button" onClick={() => btcPurchase.mutate({ amountCzk: btcAmountToProcess })}>Zkusit znovu</button>}
               </div>}
               {row.key === "debt" && debtStep === "active" && currentDebtPayment && <div className="income-debt-workflow">

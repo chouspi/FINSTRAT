@@ -77,10 +77,12 @@ describe('BitcoinPage', () => {
       }
       if (url.endsWith('/accounts/account-2/movements')) return { ok: true, status: 200, json: async () => [] } as Response
       if (url.endsWith('/accounts/coinmate-account/movements')) return { ok: true, status: 200, json: async () => [] } as Response
+      if (url.endsWith('/income-plan/coinmate-purchase-requirements')) return { ok: true, status: 200, json: async () => ({ minAmountCzk: 27.43, maxAmountCzk: 10000 }) } as Response
       if (url.endsWith('/income-plan/coinmate-czk-balance')) {
         coinmateBalanceReads += 1
         return { ok: true, status: 200, json: async () => ({ balanceCzk: coinmateBalanceReads === 1 ? 600 : 0 }) } as Response
       }
+      if (url.endsWith('/income-plan/coinmate-bitcoin-purchases')) return { ok: true, status: 200, json: async () => [] } as Response
       if (url.endsWith('/income-plan/coinmate-bitcoin-purchase')) return { ok: true, status: 200, json: async () => ({ success: true, btcBought: 0.0003, status: 'filled', pending: false }) } as Response
       if (url.endsWith('/bitcoin/transfers')) {
         return { ok: true, status: 201, json: async () => ({ id: 'transfer-1' }) } as Response
@@ -263,7 +265,7 @@ describe('BitcoinPage', () => {
     expect(JSON.parse(String((purchase![1] as RequestInit).body))).toMatchObject({ quantityBtc: '0.01', unitPriceCzk: '1000000.00' })
   })
 
-  it('buys through the API only from the Coinmate account and records the returned BTC', async () => {
+  it('queues an API buy and opens the active server purchases without a browser ledger write', async () => {
     const user = userEvent.setup()
     const router = createTestRouter('/bitcoin')
     await router.load()
@@ -277,15 +279,42 @@ describe('BitcoinPage', () => {
     await user.click(within(coinmate).getByText('Burza'))
     await user.click(within(coinmate).getByRole('button', { name: 'API nákup' }))
     const dialog = screen.getByRole('dialog', { name: 'API nákup' })
-    expect(await within(dialog).findByText(/600[  ]Kč/)).toBeInTheDocument()
+    expect(await within(dialog).findByText(/^600[  ]Kč$/)).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Koupit za vše' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'API nákup' })).not.toBeInTheDocument())
     const trade = vi.mocked(fetch).mock.calls.find(([input, options]) => String(input).endsWith('/income-plan/coinmate-bitcoin-purchase') && options?.method === 'POST')
-    expect(JSON.parse(String(trade?.[1]?.body))).toEqual({ amountCzk: '596.41' })
+    expect(JSON.parse(String(trade?.[1]?.body))).toEqual({ amountCzk: '600.00', accountId: 'coinmate-account' })
     const ledger = vi.mocked(fetch).mock.calls.find(([input, options]) => String(input).endsWith('/bitcoin/purchases') && options?.method === 'POST')
-    const tradeHeaders = trade?.[1]?.headers as Record<string, string>
-    expect(ledger?.[1]?.headers).toMatchObject({ 'Idempotency-Key': tradeHeaders['Idempotency-Key'] })
-    expect(JSON.parse(String(ledger?.[1]?.body))).toMatchObject({ accountId: 'coinmate-account', quantityBtc: '0.00030000', unitPriceCzk: '2000000.00', note: 'API nákup na Coinmate' })
+    expect(ledger).toBeUndefined()
+    expect(await screen.findByText('Žádné probíhající API nákupy.')).toBeInTheDocument()
+
   })
+  it('shows Income and direct API jobs with partial fills and handles list errors', async () => {
+    const original = vi.mocked(fetch).getMockImplementation()!
+    let failing = true
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input).endsWith('/income-plan/coinmate-bitcoin-purchases')) {
+        if (failing) throw new Error('Offline')
+        return { ok: true, status: 200, json: async () => [
+          { id: 'job-1', accountName: 'Coinmate', source: 'income', status: 'waiting_deposit', amountCzk: 1000, btcBought: 0, spentCzk: null, limitPrice: null },
+          { id: 'job-2', accountName: 'Coinmate', source: 'bitcoin', status: 'buying', amountCzk: 2000, btcBought: .0003, spentCzk: 602.4, limitPrice: 2000000 },
+        ] } as Response
+      }
+      return original(input, init)
+    })
+    const user = userEvent.setup()
+    const router = createTestRouter('/bitcoin')
+    await router.load()
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RouterProvider router={router} /></QueryClientProvider>)
+    await user.click(await screen.findByRole('button', { name: 'API nákupy' }))
+    expect(await screen.findByText(/Nákupy se nepodařilo načíst/)).toBeInTheDocument()
+    failing = false
+    await user.click(screen.getByRole('button', { name: 'Zkusit znovu' }))
+    expect(await screen.findByText('Čeká na vklad')).toBeInTheDocument()
+    expect(screen.getByText('Probíhá nákup')).toBeInTheDocument()
+    expect(screen.getByText('0.0003 BTC')).toBeInTheDocument()
+    expect(screen.getByText('Coinmate · Income plán')).toBeInTheDocument()
+  })
+
 })

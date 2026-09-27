@@ -24,6 +24,9 @@ public sealed class CoinmateBalanceWatchService(
     public async Task<decimal> GetCzkBalanceAsync(CancellationToken cancellationToken) =>
         await SendAsync<decimal>(HttpMethod.Get, "current_balance/czk", StandardTimeout, cancellationToken);
 
+    public async Task<decimal> GetFundingBalanceAsync(CancellationToken cancellationToken) =>
+        await SendAsync<decimal>(HttpMethod.Get, "funding_balance/czk", TimeSpan.FromSeconds(30), cancellationToken);
+
     public async Task<CoinmateBalanceWatchPingResponse> PingAsync(
         Guid watchId,
         CancellationToken cancellationToken)
@@ -41,6 +44,9 @@ public sealed class CoinmateBalanceWatchService(
             HttpMethod.Get, $"balance_watch/{watchId:D}", WatchTimeout, cancellationToken);
         return new(response.Changed, response.Currency, response.Balance);
     }
+
+    public async Task<CoinmatePurchaseRequirements> GetPurchaseRequirementsAsync(CancellationToken cancellationToken) =>
+        await SendAsync<CoinmatePurchaseRequirements>(HttpMethod.Get, "buy_bitcoin/requirements", StandardTimeout, cancellationToken);
 
     public async Task<CoinmateBitcoinPurchaseResponse> PurchaseBitcoinAsync(
         decimal amount,
@@ -139,7 +145,8 @@ public sealed class CoinmateBalanceWatchService(
             throw new CoinmateBalanceWatchUnavailableException();
         }
 
-        return new(response.Success.Value, response.BtcBought.Value, response.Status, response.Pending.Value);
+        return new(response.Success.Value, response.BtcBought.Value, response.Status, response.Pending.Value,
+            response.SpentCzk, response.LimitPrice, response.Detail, response.CompletedAt);
     }
 
     private sealed record StartResponse(
@@ -164,7 +171,11 @@ public sealed class CoinmateBalanceWatchService(
         [property: JsonPropertyName("success")] bool? Success,
         [property: JsonPropertyName("btc_bought")] decimal? BtcBought,
         [property: JsonPropertyName("status")] string? Status,
-        [property: JsonPropertyName("pending")] bool? Pending);
+        [property: JsonPropertyName("pending")] bool? Pending,
+        [property: JsonPropertyName("spent_czk")] decimal? SpentCzk,
+        [property: JsonPropertyName("limit_price")] decimal? LimitPrice,
+        [property: JsonPropertyName("detail")] string? Detail,
+        [property: JsonPropertyName("completed_at")] double? CompletedAt);
 }
 
 public sealed record CoinmateBalanceWatchStartedResponse(
@@ -181,8 +192,17 @@ public sealed record CoinmateBitcoinPurchaseResponse(
     bool Success,
     decimal BtcBought,
     string Status,
-    bool Pending);
+    bool Pending,
+    decimal? SpentCzk = null,
+    decimal? LimitPrice = null,
+    string? Detail = null,
+    double? CompletedAt = null);
 
 public sealed class CoinmateBalanceWatchUnavailableException : Exception;
 
 public sealed class CoinmateBalanceWatchNotFoundException : Exception;
+
+public sealed record CoinmatePurchaseRequirements(
+    [property: JsonPropertyName("min_amount_czk")] decimal MinAmountCzk,
+    [property: JsonPropertyName("min_amount_btc")] decimal MinAmountBtc,
+    [property: JsonPropertyName("max_amount_czk")] decimal MaxAmountCzk);
